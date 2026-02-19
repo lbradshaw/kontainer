@@ -3,8 +3,10 @@
 *.dll
 *.so
 *.dylib
-totetrax
-totetrax.exe
+/kontainer
+/kontainer.exe
+/totetrax
+/totetrax.exe
 
 # Database
 *.db
@@ -24,5 +26,10 @@ Thumbs.db
 # Settings
 settings.json
 
-# Uploaded images
+# Uploaded images (legacy - now using database BLOBs)
 web/static/images/uploads/
+
+# Docker
+.env
+docker-compose.override.yml
+*.tar.gz

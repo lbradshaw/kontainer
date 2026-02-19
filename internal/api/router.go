@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"totetrax/internal/service"
+	"kontainer/internal/service"
 )
 
 // NewRouter creates and configures the HTTP router
@@ -16,8 +16,15 @@ func NewRouter(toteService *service.ToteService, settingsService *service.Settin
 	// API routes - Totes
 	mux.HandleFunc("/api/totes", handler.TotesHandler)              // GET all totes
 	mux.HandleFunc("/api/tote", handler.ToteCreateHandler)          // POST single tote
-	mux.HandleFunc("/api/tote/", handler.ToteHandler)               // GET/PUT/DELETE by ID
+	mux.HandleFunc("/api/tote/", handler.ToteHandler)               // GET/PUT/DELETE by ID or add image
 	mux.HandleFunc("/api/tote/qr/", handler.ToteByQRCodeHandler)    // GET by QR code
+
+	// API routes - Images
+	mux.HandleFunc("/api/upload-image", handler.UploadImageHandler)  // POST upload image
+	mux.HandleFunc("/api/tote-image/", handler.ToteImageHandler)     // DELETE image by ID
+	
+	// Image serving
+	mux.HandleFunc("/images/", handler.ServeImageHandler)            // Serve images from storage
 
 	// API routes - Settings
 	mux.HandleFunc("/api/settings", handler.APISettingsHandler)     // GET/PUT settings
@@ -27,15 +34,13 @@ func NewRouter(toteService *service.ToteService, settingsService *service.Settin
 	mux.HandleFunc("/api/import", handler.ImportHandler)            // POST import inventory
 	mux.HandleFunc("/api/totes/delete-all", handler.DeleteAllTotesHandler) // DELETE all totes
 
-	// API routes - Image upload
-	mux.HandleFunc("/api/upload-image", handler.UploadImageHandler) // POST upload image
-
 	// Web UI routes
 	mux.HandleFunc("/", handler.IndexHandler)
 	mux.HandleFunc("/add", handler.AddToteHandler)
 	mux.HandleFunc("/edit", handler.EditToteHandler)
 	mux.HandleFunc("/tote/", handler.ToteDetailHandler)
 	mux.HandleFunc("/scan", handler.ScanHandler)
+	mux.HandleFunc("/settings", handler.SettingsPageHandler)
 	mux.HandleFunc("/print-label/", handler.PrintLabelHandler)
 
 	// Static files

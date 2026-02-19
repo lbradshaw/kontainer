@@ -27,14 +27,31 @@ function loadToteDetail() {
 }
 
 function displayToteDetail(tote) {
-	const imageHtml = tote.image_path 
-		? `<img src="${tote.image_path}" class="detail-image" alt="${tote.name}">`
-		: '';
+	// Build images gallery HTML
+	let imagesHtml = '';
+	if (tote.images && tote.images.length > 0) {
+		imagesHtml = '<div class="images-gallery" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin: 2rem 0;">';
+		tote.images.forEach(img => {
+			imagesHtml += `
+				<div class="image-item" style="position: relative; cursor: pointer;" onclick="viewFullImage('${img.image_data}')">
+					<img src="${img.image_data}" class="detail-image" alt="${tote.name}" style="width: 100%; height: 200px; object-fit: cover;">
+				</div>
+			`;
+		});
+		imagesHtml += '</div>';
+	}
 
 	const descriptionHtml = tote.description 
 		? `<div class="detail-row">
 				<label>Description</label>
 				<div class="value">${tote.description}</div>
+			</div>`
+		: '';
+
+	const locationHtml = tote.location 
+		? `<div class="detail-row">
+				<label>Location</label>
+				<div class="value">${tote.location}</div>
 			</div>`
 		: '';
 
@@ -60,6 +77,11 @@ function displayToteDetail(tote) {
 			</div>
 			<div class="detail-info">
 				${descriptionHtml}
+				${locationHtml}
+				<div class="detail-row">
+					<label>Total Images</label>
+					<div class="value">${tote.images ? tote.images.length : 0}</div>
+				</div>
 				<div class="detail-row">
 					<label>Created</label>
 					<div class="value">${new Date(tote.created_at).toLocaleDateString()}</div>
@@ -71,12 +93,48 @@ function displayToteDetail(tote) {
 			</div>
 		</div>
 
-		${imageHtml}
+		${imagesHtml}
 
 		${itemsHtml}
 	`;
 
 	document.getElementById('tote-detail').innerHTML = html;
+	
+	// Add modal for full-size image viewing
+	if (!document.getElementById('image-modal')) {
+		const modal = document.createElement('div');
+		modal.id = 'image-modal';
+		modal.style.display = 'none';
+		modal.style.position = 'fixed';
+		modal.style.top = '0';
+		modal.style.left = '0';
+		modal.style.width = '100%';
+		modal.style.height = '100%';
+		modal.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+		modal.style.zIndex = '10000';
+		modal.style.cursor = 'pointer';
+		modal.innerHTML = `
+			<div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+				<span style="position: absolute; top: 20px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer;" onclick="closeImageModal()">&times;</span>
+				<img id="modal-image" style="max-width: 95%; max-height: 95%; object-fit: contain;">
+			</div>
+		`;
+		document.body.appendChild(modal);
+		
+		// Close modal when clicking outside image
+		modal.addEventListener('click', closeImageModal);
+	}
+}
+
+function viewFullImage(imageSrc) {
+	const modal = document.getElementById('image-modal');
+	const modalImg = document.getElementById('modal-image');
+	modal.style.display = 'block';
+	modalImg.src = imageSrc;
+}
+
+function closeImageModal() {
+	document.getElementById('image-modal').style.display = 'none';
 }
 
 function generateQRCode(qrText) {
@@ -112,3 +170,5 @@ function deleteTote() {
 		alert('Error deleting tote');
 	});
 }
+
+

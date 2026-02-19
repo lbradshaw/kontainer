@@ -24,6 +24,11 @@ func InitDB(filepath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("error creating tables: %w", err)
 	}
 
+	// Run migrations
+	if err := runMigrations(db); err != nil {
+		return nil, fmt.Errorf("error running migrations: %w", err)
+	}
+
 	return db, nil
 }
 
@@ -40,12 +45,46 @@ func createTables(db *sql.DB) error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS tote_images (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tote_id INTEGER NOT NULL,
+		image_data BLOB NOT NULL,
+		image_type TEXT NOT NULL,
+		display_order INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (tote_id) REFERENCES totes(id) ON DELETE CASCADE
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_name ON totes(name);
 	CREATE INDEX IF NOT EXISTS idx_qr_code ON totes(qr_code);
+	CREATE INDEX IF NOT EXISTS idx_tote_images_tote_id ON tote_images(tote_id);
 	`
 
 	if _, err := db.Exec(schema); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func runMigrations(db *sql.DB) error {
+	// Add location column if it doesn't exist
+	var columnExists bool
+	err := db.QueryRow(`
+		SELECT COUNT(*) > 0 
+		FROM pragma_table_info('totes') 
+		WHERE name = 'location'
+	`).Scan(&columnExists)
+	
+	if err != nil {
+		return fmt.Errorf("error checking for location column: %w", err)
+	}
+
+	if !columnExists {
+		_, err = db.Exec("ALTER TABLE totes ADD COLUMN location TEXT")
+		if err != nil {
+			return fmt.Errorf("error adding location column: %w", err)
+		}
 	}
 
 	return nil

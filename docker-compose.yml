@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  kontainer:
+    build: .
+    image: kontainer:latest
+    container_name: kontainer
+    ports:
+      - "3818:3818"
+    environment:
+      - PORT=3818
+      - DATABASE_PATH=/data/kontainer.db
+      - THEME=dark
+    volumes:
+      # Persistent data storage
+      - kontainer-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3818"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 256M
+
+volumes:
+  kontainer-data:
+    driver: local

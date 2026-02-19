@@ -1,7 +1,8 @@
 // form.js - Add/Edit tote form functionality
 
 const isEditMode = window.location.pathname.includes('/edit');
-let currentImagePath = null;
+let currentImagePaths = [];
+let uploadedImages = []; // Changed to store base64 data and types
 
 document.addEventListener('DOMContentLoaded', function() {
 	setupForm();
@@ -19,15 +20,40 @@ function setupForm() {
 
 function setupImagePreview() {
 	const imageInput = document.getElementById('image');
-	imageInput.addEventListener('change', function(e) {
-		const file = e.target.files[0];
-		if (file) {
-			const reader = new FileReader();
-			reader.onload = function(e) {
-				document.getElementById('preview-img').src = e.target.result;
-				document.getElementById('image-preview').style.display = 'block';
-			};
-			reader.readAsDataURL(file);
+	imageInput.addEventListener('change', async function(e) {
+		const files = e.target.files;
+		if (files.length > 0) {
+			const previewContainer = document.getElementById('image-preview');
+			previewContainer.innerHTML = '<h4>Selected Images:</h4>';
+			previewContainer.style.display = 'block';
+
+			// Convert all images to base64
+			uploadedImages = [];
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				
+				// Convert to base64
+				const reader = new FileReader();
+				reader.onload = function(e) {
+					const base64Data = e.target.result; // Already in data URI format
+					
+					uploadedImages.push({
+						data: base64Data,
+						type: file.type
+					});
+					
+					// Show preview
+					const img = document.createElement('img');
+					img.src = base64Data;
+					img.style.maxWidth = '150px';
+					img.style.maxHeight = '150px';
+					img.style.margin = '5px';
+					img.style.border = '1px solid #ddd';
+					img.style.borderRadius = '4px';
+					previewContainer.appendChild(img);
+				};
+				reader.readAsDataURL(file);
+			}
 		}
 	});
 }
@@ -41,11 +67,25 @@ function loadToteData() {
 			document.getElementById('name').value = tote.name || '';
 			document.getElementById('description').value = tote.description || '';
 			document.getElementById('items').value = tote.items || '';
-			currentImagePath = tote.image_path;
+			document.getElementById('location').value = tote.location || '';
+			
+			// Store existing images
+			currentImagePaths = tote.images || [];
 
-			if (tote.image_path) {
-				document.getElementById('current-image').innerHTML = 
-					`<p>Current image:</p><img src="${tote.image_path}" style="max-width: 300px; max-height: 300px; border: 1px solid #ddd; border-radius: 4px;">`;
+			if (tote.images && tote.images.length > 0) {
+				let imagesHtml = `<p><strong>Current images (${tote.images.length}):</strong></p><div style="display: flex; flex-wrap: wrap; gap: 10px;">`;
+				tote.images.forEach(img => {
+					imagesHtml += `
+						<div style="position: relative; display: inline-block;">
+							<img src="${img.image_data}" style="max-width: 150px; max-height: 150px; border: 1px solid #ddd; border-radius: 4px; display: block;">
+							<button type="button" onclick="deleteImage(${img.id})" class="btn btn-danger" style="position: absolute; top: 5px; right: 5px; padding: 5px 10px; font-size: 0.8rem;">
+								🗑️
+							</button>
+						</div>
+					`;
+				});
+				imagesHtml += '</div>';
+				document.getElementById('current-image').innerHTML = imagesHtml;
 			}
 		})
 		.catch(error => {
@@ -60,66 +100,99 @@ async function handleSubmit(e) {
 	const name = document.getElementById('name').value;
 	const description = document.getElementById('description').value;
 	const items = document.getElementById('items').value;
-	const imageFile = document.getElementById('image').files[0];
+	const location = document.getElementById('location').value;
 
-	let imagePath = currentImagePath;
+	if (isEditMode) {
+		// For edit mode, just update the tote details
+		const toteData = {
+			name,
+			description,
+			items,
+			location
+		};
 
-	// Upload image if new file selected
-	if (imageFile) {
-		const formData = new FormData();
-		formData.append('image', imageFile);
+		const toteId = document.getElementById('tote-id').value;
 
 		try {
-			const response = await fetch('/api/upload-image', {
-				method: 'POST',
-				body: formData
+			const response = await fetch(`/api/tote/${toteId}`, {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(toteData)
 			});
 
 			if (!response.ok) {
-				throw new Error('Image upload failed');
+				throw new Error('Failed to update tote');
 			}
 
-			const data = await response.json();
-			imagePath = data.path;
+			// Add new images if any were uploaded (send base64 data)
+			for (const img of uploadedImages) {
+				await fetch(`/api/tote/${toteId}/add-image`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ image_data: img.data })
+				});
+			}
+
+			const tote = await response.json();
+			window.location.href = `/tote/${tote.id}`;
 		} catch (error) {
-			console.error('Error uploading image:', error);
-			alert('Error uploading image');
-			return;
+			console.error('Error saving tote:', error);
+			alert('Error saving tote');
+		}
+	} else {
+		// For create mode, include all uploaded images as base64
+		const toteData = {
+			name,
+			description,
+			items,
+			location,
+			image_paths: uploadedImages.map(img => img.data),
+			image_types: uploadedImages.map(img => img.type)
+		};
+
+		try {
+			const response = await fetch('/api/tote', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(toteData)
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to create tote');
+			}
+
+			const tote = await response.json();
+			window.location.href = `/tote/${tote.id}`;
+		} catch (error) {
+			console.error('Error creating tote:', error);
+			alert('Error creating tote');
 		}
 	}
+}
 
-	// Create or update tote
-	const toteData = {
-		name,
-		description,
-		items,
-		image_path: imagePath || ''
-	};
+function deleteImage(imageId) {
+	if (!confirm('Are you sure you want to delete this image?')) {
+		return;
+	}
 
-	const url = isEditMode 
-		? `/api/tote/${document.getElementById('tote-id').value}`
-		: '/api/tote';
-	
-	const method = isEditMode ? 'PUT' : 'POST';
-
-	fetch(url, {
-		method: method,
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(toteData)
+	fetch(`/api/tote-image/${imageId}`, {
+		method: 'DELETE'
 	})
 	.then(response => {
 		if (!response.ok) {
-			throw new Error('Failed to save tote');
+			throw new Error('Failed to delete image');
 		}
-		return response.json();
-	})
-	.then(tote => {
-		window.location.href = `/tote/${tote.id}`;
+		// Reload tote data to refresh the image list
+		loadToteData();
 	})
 	.catch(error => {
-		console.error('Error saving tote:', error);
-		alert('Error saving tote');
+		console.error('Error deleting image:', error);
+		alert('Error deleting image');
 	});
 }

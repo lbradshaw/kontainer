@@ -3,16 +3,13 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"totetrax/internal/models"
-	"totetrax/internal/service"
+	"kontainer/internal/models"
+	"kontainer/internal/service"
 )
 
 type Handler struct {
@@ -25,6 +22,13 @@ func NewHandler(toteService *service.ToteService, settingsService *service.Setti
 		toteService:     toteService,
 		settingsService: settingsService,
 	}
+}
+
+// convertImagePathsToURLs is no longer needed since images are base64 encoded in database
+// but keeping for backward compatibility with legacy image_path field
+func convertImagePathsToURLs(tote *models.Tote) {
+	// Images are now base64 data URIs, no conversion needed
+	// Legacy image_path can remain as-is for backward compatibility
 }
 
 // IndexHandler serves the main web interface
@@ -40,12 +44,12 @@ func (h *Handler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>ToteTrax - Storage Container Inventory</title>
+	<title>Kontainer - Storage Container Inventory</title>
 	<link rel="stylesheet" href="/static/css/style.css">
 	<script>
 		(function() {
 			try {
-				const settings = JSON.parse(localStorage.getItem('totetrax_settings') || '{}');
+				const settings = JSON.parse(localStorage.getItem('kontainer_settings') || '{}');
 				if (settings.theme === 'dark') {
 					document.documentElement.classList.add('dark-mode');
 				}
@@ -58,16 +62,26 @@ func (h *Handler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="container">
 			<div class="header-content">
 				<div class="header-title">
-					<h1>📦 ToteTrax</h1>
+					<h1>📦 Kontainer</h1>
 				</div>
 				<div class="header-actions">
 					<button class="btn btn-secondary" onclick="window.location.href='/scan'">
-						📱 Scan QR
+						🔍 Look up
+					</button>
+					<button class="btn btn-secondary" onclick="exportData()">
+						📥 Export
+					</button>
+					<button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">
+						📤 Import
 					</button>
 					<button class="btn btn-primary" onclick="window.location.href='/add'">
-						➕ Add Tote
+						➕ Add Kontainer
+					</button>
+					<button class="btn btn-secondary" onclick="window.location.href='/settings'">
+						⚙️ Settings
 					</button>
 				</div>
+				<input type="file" id="import-file" accept=".json" style="display: none;" onchange="importData(event)">
 			</div>
 		</div>
 	</header>
@@ -76,7 +90,7 @@ func (h *Handler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="stats-grid">
 			<div class="stat-card">
 				<div class="stat-header">
-					<span class="stat-label">Total Totes</span>
+					<span class="stat-label">Total Containers</span>
 					<span class="stat-icon">📦</span>
 				</div>
 				<div class="stat-value" id="total-totes">0</div>
@@ -85,7 +99,7 @@ func (h *Handler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 		</div>
 
 		<div class="search-section">
-			<input type="text" id="search" class="search-input" placeholder="Search totes by name or items...">
+			<input type="text" id="search" class="search-input" placeholder="Search kontainers by name or items...">
 		</div>
 
 		<div id="totes-grid" class="totes-grid">
@@ -116,12 +130,12 @@ func (h *Handler) AddToteHandler(w http.ResponseWriter, r *http.Request) {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Add Tote - ToteTrax</title>
+	<title>Add Kontainer</title>
 	<link rel="stylesheet" href="/static/css/style.css">
 	<script>
 		(function() {
 			try {
-				const settings = JSON.parse(localStorage.getItem('totetrax_settings') || '{}');
+				const settings = JSON.parse(localStorage.getItem('kontainer_settings') || '{}');
 				if (settings.theme === 'dark') {
 					document.documentElement.classList.add('dark-mode');
 				}
@@ -134,7 +148,7 @@ func (h *Handler) AddToteHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="container">
 			<div class="header-content">
 				<div class="header-title">
-					<h1>📦 ToteTrax</h1>
+					<h1>📦 Kontainer</h1>
 				</div>
 				<div class="header-actions">
 					<button class="btn btn-secondary" onclick="window.location.href='/'">
@@ -147,10 +161,10 @@ func (h *Handler) AddToteHandler(w http.ResponseWriter, r *http.Request) {
 
 	<main class="container">
 		<div class="form-container">
-			<h2>Add New Tote</h2>
+			<h2>Add New Kontainer</h2>
 			<form id="tote-form">
 				<div class="form-group">
-					<label for="name">Tote Name *</label>
+					<label for="name">Name (required)</label>
 					<input type="text" id="name" name="name" required placeholder="e.g., Kitchen Supplies, Holiday Decorations">
 				</div>
 
@@ -160,21 +174,25 @@ func (h *Handler) AddToteHandler(w http.ResponseWriter, r *http.Request) {
 				</div>
 
 				<div class="form-group">
+					<label for="location">Location</label>
+					<input type="text" id="location" name="location" placeholder="e.g., Garage, Basement, Storage Unit A">
+				</div>
+
+				<div class="form-group">
 					<label for="items">Items List</label>
 					<textarea id="items" name="items" rows="6" placeholder="Enter items (one per line)&#10;Example:&#10;- 4x Dish towels&#10;- 2x Pot holders&#10;- 1x Apron"></textarea>
 				</div>
 
 				<div class="form-group">
-					<label for="image">Tote Image</label>
-					<input type="file" id="image" name="image" accept="image/*">
-					<div id="image-preview" style="margin-top: 10px; display: none;">
-						<img id="preview-img" style="max-width: 300px; max-height: 300px; border: 1px solid #ddd; border-radius: 4px;">
-					</div>
+					<label for="image">Images</label>
+					<input type="file" id="image" name="image" accept="image/*" multiple>
+					<p style="font-size: 0.85rem; opacity: 0.7; margin-top: 0.3rem;">Select one or more images (Ctrl+Click or Shift+Click)</p>
+					<div id="image-preview" style="margin-top: 10px; display: none;"></div>
 				</div>
 
 				<div class="form-actions">
 					<button type="button" class="btn btn-secondary" onclick="window.location.href='/'">Cancel</button>
-					<button type="submit" class="btn btn-primary">Save Tote</button>
+					<button type="submit" class="btn btn-primary">Save</button>
 				</div>
 			</form>
 		</div>
@@ -202,12 +220,12 @@ func (h *Handler) EditToteHandler(w http.ResponseWriter, r *http.Request) {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Edit Tote - ToteTrax</title>
+	<title>Edit Kontainer</title>
 	<link rel="stylesheet" href="/static/css/style.css">
 	<script>
 		(function() {
 			try {
-				const settings = JSON.parse(localStorage.getItem('totetrax_settings') || '{}');
+				const settings = JSON.parse(localStorage.getItem('kontainer_settings') || '{}');
 				if (settings.theme === 'dark') {
 					document.documentElement.classList.add('dark-mode');
 				}
@@ -220,7 +238,7 @@ func (h *Handler) EditToteHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="container">
 			<div class="header-content">
 				<div class="header-title">
-					<h1>📦 ToteTrax</h1>
+					<h1>📦 Kontainer</h1>
 				</div>
 				<div class="header-actions">
 					<button class="btn btn-secondary" onclick="window.location.href='/tote/%s'">
@@ -233,12 +251,12 @@ func (h *Handler) EditToteHandler(w http.ResponseWriter, r *http.Request) {
 
 	<main class="container">
 		<div class="form-container">
-			<h2>Edit Tote</h2>
+			<h2>Edit Kontainer</h2>
 			<form id="tote-form">
 				<input type="hidden" id="tote-id" value="%s">
 				
 				<div class="form-group">
-					<label for="name">Tote Name *</label>
+					<label for="name">Name (required)</label>
 					<input type="text" id="name" name="name" required>
 				</div>
 
@@ -248,22 +266,29 @@ func (h *Handler) EditToteHandler(w http.ResponseWriter, r *http.Request) {
 				</div>
 
 				<div class="form-group">
+					<label for="location">Location</label>
+					<input type="text" id="location" name="location" placeholder="e.g., Garage, Basement, Storage Unit A">
+				</div>
+
+				<div class="form-group">
 					<label for="items">Items List</label>
 					<textarea id="items" name="items" rows="6"></textarea>
 				</div>
 
 				<div class="form-group">
-					<label for="image">Change Tote Image</label>
-					<input type="file" id="image" name="image" accept="image/*">
+					<label for="image">Add More Images</label>
+					<input type="file" id="image" name="image" accept="image/*" multiple>
+					<p style="font-size: 0.85rem; color: #28a745; margin-top: 0.3rem;">
+						✓ Select additional images to add (Ctrl+Click or Shift+Click)<br>
+						✓ Existing images will be kept - new images will be added to the gallery
+					</p>
 					<div id="current-image" style="margin-top: 10px;"></div>
-					<div id="image-preview" style="margin-top: 10px; display: none;">
-						<img id="preview-img" style="max-width: 300px; max-height: 300px; border: 1px solid #ddd; border-radius: 4px;">
-					</div>
+					<div id="image-preview" style="margin-top: 10px; display: none;"></div>
 				</div>
 
 				<div class="form-actions">
 					<button type="button" class="btn btn-secondary" onclick="window.location.href='/tote/%s'">Cancel</button>
-					<button type="submit" class="btn btn-primary">Update Tote</button>
+					<button type="submit" class="btn btn-primary">Update</button>
 				</div>
 			</form>
 		</div>
@@ -292,13 +317,13 @@ func (h *Handler) ToteDetailHandler(w http.ResponseWriter, r *http.Request) {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Tote Details - ToteTrax</title>
+	<title>Kontainer Details</title>
 	<link rel="stylesheet" href="/static/css/style.css">
 	<script src="/static/js/qrcode.min.js"></script>
 	<script>
 		(function() {
 			try {
-				const settings = JSON.parse(localStorage.getItem('totetrax_settings') || '{}');
+				const settings = JSON.parse(localStorage.getItem('kontainer_settings') || '{}');
 				if (settings.theme === 'dark') {
 					document.documentElement.classList.add('dark-mode');
 				}
@@ -311,7 +336,7 @@ func (h *Handler) ToteDetailHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="container">
 			<div class="header-content">
 				<div class="header-title">
-					<h1>📦 ToteTrax</h1>
+					<h1>📦 Kontainer</h1>
 				</div>
 				<div class="header-actions">
 					<button class="btn btn-secondary" onclick="window.location.href='/'">
@@ -353,13 +378,13 @@ func (h *Handler) ScanHandler(w http.ResponseWriter, r *http.Request) {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Scan QR Code - ToteTrax</title>
+	<title>Scan QR Code - Kontainer</title>
 	<link rel="stylesheet" href="/static/css/style.css">
 	<script src="/static/js/html5-qrcode.min.js"></script>
 	<script>
 		(function() {
 			try {
-				const settings = JSON.parse(localStorage.getItem('totetrax_settings') || '{}');
+				const settings = JSON.parse(localStorage.getItem('kontainer_settings') || '{}');
 				if (settings.theme === 'dark') {
 					document.documentElement.classList.add('dark-mode');
 				}
@@ -372,7 +397,7 @@ func (h *Handler) ScanHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="container">
 			<div class="header-content">
 				<div class="header-title">
-					<h1>📦 ToteTrax</h1>
+					<h1>📦 Kontainer</h1>
 				</div>
 				<div class="header-actions">
 					<button class="btn btn-secondary" onclick="window.location.href='/'">
@@ -385,23 +410,17 @@ func (h *Handler) ScanHandler(w http.ResponseWriter, r *http.Request) {
 
 	<main class="container">
 		<div class="scan-container">
-			<h2>Scan Tote QR Code</h2>
+			<h2>Look up Tote</h2>
 			
 			<div class="scan-methods">
 				<div class="scan-method">
-					<h3>📷 Method 1: Camera Scan</h3>
-					<div id="qr-reader" style="width: 100%; max-width: 500px; margin: 20px auto;"></div>
-					<div id="qr-reader-results"></div>
-				</div>
-
-				<div class="scan-method">
-					<h3>🖼️ Method 2: Upload Image</h3>
+					<h3>🖼️ Method 1: Upload Image</h3>
 					<input type="file" id="qr-file" accept="image/*" style="margin: 10px 0;">
 					<div id="file-reader-results"></div>
 				</div>
 
 				<div class="scan-method">
-					<h3>⌨️ Method 3: Manual Entry</h3>
+					<h3>⌨️ Method 2: Manual Entry</h3>
 					<input type="text" id="manual-code" placeholder="Enter QR code (e.g., TOTE-00001)" style="width: 100%; max-width: 300px; padding: 10px;">
 					<button class="btn btn-primary" onclick="manualLookup()" style="margin-top: 10px;">Look Up</button>
 				</div>
@@ -410,58 +429,216 @@ func (h *Handler) ScanHandler(w http.ResponseWriter, r *http.Request) {
 	</main>
 
 	<script>
-		let html5QrCode;
-		
-		function onScanSuccess(decodedText) {
-			if (decodedText.startsWith('TOTE-')) {
-				fetch('/api/tote/qr/' + decodedText)
-					.then(response => response.json())
-					.then(data => {
-						if (data.id) {
-							window.location.href = '/tote/' + data.id;
-						}
-					})
-					.catch(error => {
-						alert('Tote not found: ' + decodedText);
-					});
+		document.addEventListener('DOMContentLoaded', function() {
+			console.log('Page loaded, initializing QR scanner');
+			
+			function onScanSuccess(decodedText) {
+				console.log('Decoded QR code:', decodedText);
+				if (decodedText.startsWith('TOTE-')) {
+					fetch('/api/tote/qr/' + decodedText)
+						.then(response => {
+							console.log('API response status:', response.status);
+							return response.json();
+						})
+						.then(data => {
+							console.log('API data:', data);
+							if (data.id) {
+								window.location.href = '/tote/' + data.id;
+							} else {
+								alert('Tote not found: ' + decodedText);
+							}
+						})
+						.catch(error => {
+							console.error('API error:', error);
+							alert('Tote not found: ' + decodedText);
+						});
+				} else {
+					alert('Invalid QR code format. Expected TOTE-XXXXX, got: ' + decodedText);
+				}
 			}
-		}
 
-		// Start camera scanning
-		html5QrCode = new Html5Qrcode("qr-reader");
-		html5QrCode.start(
-			{ facingMode: "environment" },
-			{ fps: 10, qrbox: 250 },
-			onScanSuccess
-		).catch(err => {
-			document.getElementById('qr-reader-results').innerHTML = 
-				'<p style="color: orange;">Camera not available. Use image upload or manual entry.</p>';
+			// File upload scanning - using html5-qrcode library
+			const fileInput = document.getElementById('qr-file');
+			console.log('File input element:', fileInput);
+			
+			fileInput.addEventListener('change', function(e) {
+				console.log('File input changed');
+				const file = e.target.files[0];
+				const resultsDiv = document.getElementById('file-reader-results');
+				
+				if (file) {
+					console.log('File selected:', file.name, file.type, file.size);
+					resultsDiv.innerHTML = '<p style="color: blue;">Processing image...</p>';
+					
+					// Create a temporary scanner instance
+					const html5QrCode = new Html5Qrcode("file-reader-results");
+					
+					html5QrCode.scanFile(file, true)
+						.then(decodedText => {
+							console.log('Scan success:', decodedText);
+							resultsDiv.innerHTML = '<p style="color: green;">QR Code found: ' + decodedText + '</p>';
+							// Clear and redirect
+							try {
+								html5QrCode.clear();
+							} catch(e) {
+								console.log('Clear error (ignorable):', e);
+							}
+							setTimeout(() => onScanSuccess(decodedText), 500);
+						})
+						.catch(err => {
+							console.error('Scan error:', err);
+							resultsDiv.innerHTML = '<p style="color: red;">Could not read QR code from this image. Please try a clearer image or use Manual Entry below.</p>';
+							try {
+								html5QrCode.clear();
+							} catch(e) {
+								console.log('Clear error (ignorable):', e);
+							}
+						});
+				} else {
+					console.log('No file selected');
+				}
+			});
+
+			// Manual entry
+			window.manualLookup = function() {
+				const code = document.getElementById('manual-code').value.trim();
+				if (code) {
+					onScanSuccess(code);
+				} else {
+					alert('Please enter a QR code');
+				}
+			};
+
+			// Allow Enter key on manual input
+			document.getElementById('manual-code').addEventListener('keypress', function(e) {
+				if (e.key === 'Enter') {
+					manualLookup();
+				}
+			});
 		});
-
-		// File upload scanning
-		document.getElementById('qr-file').addEventListener('change', function(e) {
-			const file = e.target.files[0];
-			if (file) {
-				const tempReader = new Html5Qrcode("temp-reader");
-				tempReader.scanFile(file, true)
-					.then(decodedText => {
-						onScanSuccess(decodedText);
-					})
-					.catch(err => {
-						document.getElementById('file-reader-results').innerHTML = 
-							'<p style="color: red;">Could not read QR code from image.</p>';
-					});
-			}
-		});
-
-		// Manual entry
-		function manualLookup() {
-			const code = document.getElementById('manual-code').value.trim();
-			if (code) {
-				onScanSuccess(code);
-			}
-		}
 	</script>
+</body>
+</html>
+`
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
+}
+
+// SettingsPageHandler serves the settings configuration page
+func (h *Handler) SettingsPageHandler(w http.ResponseWriter, r *http.Request) {
+	html := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Settings - Kontainer</title>
+	<link rel="stylesheet" href="/static/css/style.css">
+	<script>
+		(function() {
+			try {
+				const settings = JSON.parse(localStorage.getItem('kontainer_settings') || '{}');
+				if (settings.theme === 'dark') {
+					document.documentElement.classList.add('dark-mode');
+				}
+			} catch(e) {}
+		})();
+	</script>
+</head>
+<body>
+	<header>
+		<div class="container">
+			<div class="header-content">
+				<div class="header-title">
+					<h1>📦 Kontainer</h1>
+				</div>
+				<div class="header-actions">
+					<button class="btn btn-secondary" onclick="window.location.href='/'">
+						← Back to Home
+					</button>
+				</div>
+			</div>
+		</div>
+	</header>
+
+	<main class="container">
+		<div class="settings-container" style="max-width: 800px; margin: 0 auto;">
+			<h2>⚙️ Settings</h2>
+
+			<div class="settings-section">
+				<h3>Application Settings</h3>
+				<p style="color: #f39c12; margin-bottom: 1rem;">⚠️ Changing these settings requires restarting the application</p>
+
+				<div class="form-group">
+					<label for="port">Server Port</label>
+					<input type="number" id="port" name="port" min="1024" max="65535" style="max-width: 200px;">
+					<p style="font-size: 0.85rem; opacity: 0.7; margin-top: 0.3rem;">
+						Current port. Change and restart to apply. (Default: 3818)
+					</p>
+				</div>
+
+				<div class="form-group">
+					<label for="database_path">Database File Path</label>
+					<input type="text" id="database_path" name="database_path" placeholder="kontainer.db">
+					<p style="font-size: 0.85rem; opacity: 0.7; margin-top: 0.3rem;">
+						Local path to SQLite database file. For NAS storage, run Kontainer on the NAS itself via Docker.
+					</p>
+				</div>
+			</div>
+
+			<div class="settings-section" style="margin-top: 2rem;">
+				<h3>Appearance</h3>
+
+				<div class="form-group">
+					<label for="theme">Theme</label>
+					<select id="theme" name="theme" style="max-width: 200px;">
+						<option value="light">Light</option>
+						<option value="dark">Dark</option>
+					</select>
+					<p style="font-size: 0.85rem; opacity: 0.7; margin-top: 0.3rem;">
+						Choose your preferred color theme
+					</p>
+				</div>
+			</div>
+
+			<div class="settings-section" style="margin-top: 2rem;">
+				<h3>Data Management</h3>
+
+				<div class="form-group">
+					<label>Backup & Restore</label>
+					<div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem;">
+						<button class="btn btn-primary" onclick="window.location.href='/api/export'">
+							📥 Export All Data
+						</button>
+						<button class="btn btn-secondary" onclick="document.getElementById('settings-import-file').click()">
+							📤 Import Data
+						</button>
+						<button class="btn btn-danger" onclick="deleteAllData()">
+							🗑️ Delete All Totes
+						</button>
+					</div>
+					<input type="file" id="settings-import-file" accept=".json" style="display: none;" onchange="importDataFromSettings(event)">
+					<p style="font-size: 0.85rem; opacity: 0.7; margin-top: 0.5rem;">
+						Export creates a JSON backup. Import adds totes from backup file.
+					</p>
+				</div>
+			</div>
+
+			<div class="form-actions" style="margin-top: 2rem; display: flex; gap: 1rem;">
+				<button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+				<button class="btn btn-secondary" onclick="resetSettings()">🔄 Reset to Defaults</button>
+			</div>
+
+			<div class="settings-section" style="margin-top: 3rem; padding: 1.5rem; background: var(--card-bg); border-radius: 8px; border-left: 4px solid #3498db;">
+				<h3>ℹ️ Current Configuration</h3>
+				<div id="current-config" style="font-family: monospace; font-size: 0.9rem; margin-top: 1rem;">
+					Loading...
+				</div>
+			</div>
+		</div>
+	</main>
+
+	<script src="/static/js/settings-page.js"></script>
 </body>
 </html>
 `
@@ -484,7 +661,7 @@ func (h *Handler) PrintLabelHandler(w http.ResponseWriter, r *http.Request) {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Print Label - ToteTrax</title>
+	<title>Print Label - Kontainer</title>
 	<script src="/static/js/qrcode.min.js"></script>
 	<style>
 		@page {
@@ -557,21 +734,19 @@ func (h *Handler) PrintLabelHandler(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
 	<div class="print-header">
-		<h2>Tote Label</h2>
+		<h2>QR Label</h2>
 		<button onclick="window.print()">🖨️ Print</button>
 		<button onclick="history.back()">← Back</button>
 	</div>
 
 	<div class="label" id="label">
 		<div class="label-header">
-			<h2>📦 ToteTrax</h2>
-			<div id="qr-code-text" style="font-size: 12pt; font-weight: bold; margin-top: 5px;"></div>
+			<h2>📦 Kontainer</h2>
 		</div>
+		<div id="tote-name" style="font-size: 14pt; font-weight: bold; text-align: center; margin: 15px 0 10px 0;">Loading...</div>
 		<div class="label-qr">
 			<div id="qrcode" style="display: inline-block;"></div>
-		</div>
-		<div class="label-info" id="tote-info">
-			<div style="text-align: center;">Loading...</div>
+			<div id="qr-code-text" style="font-size: 11pt; font-weight: bold; margin-top: 8px; text-align: center;"></div>
 		</div>
 	</div>
 
@@ -591,23 +766,14 @@ func (h *Handler) PrintLabelHandler(w http.ResponseWriter, r *http.Request) {
 					correctLevel: QRCode.CorrectLevel.H
 				});
 
+				// Display QR code text below QR code
 				document.getElementById('qr-code-text').textContent = tote.qr_code;
 
-				// Display tote info
-				let itemsHtml = '';
-				if (tote.items) {
-					itemsHtml = '<div class="label-items"><strong>Items:</strong><br>' + 
-						tote.items.split('\n').slice(0, 8).join('\n') + '</div>';
-				}
-
-				document.getElementById('tote-info').innerHTML = 
-					'<h3>' + tote.name + '</h3>' +
-					(tote.description ? '<p>' + tote.description + '</p>' : '') +
-					itemsHtml;
+				// Display the name above QR code
+				document.getElementById('tote-name').textContent = tote.name;
 			})
 			.catch(error => {
-				document.getElementById('tote-info').innerHTML = 
-					'<p style="color: red;">Error loading tote</p>';
+				document.getElementById('tote-name').textContent = 'Error loading kontainer';
 			});
 	</script>
 </body>
@@ -630,6 +796,11 @@ func (h *Handler) TotesHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Convert file paths to web URLs
+	for i := range totes {
+		convertImagePathsToURLs(&totes[i])
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -655,16 +826,23 @@ func (h *Handler) ToteCreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	convertImagePathsToURLs(tote)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(tote)
 }
 
-// ToteHandler handles GET/PUT/DELETE /api/tote/{id}
+// ToteHandler handles GET/PUT/DELETE /api/tote/{id} and POST /api/tote/{id}/add-image
 func (h *Handler) ToteHandler(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 3 {
 		http.Error(w, "Invalid tote ID", http.StatusBadRequest)
+		return
+	}
+
+	// Check if it's an add-image request
+	if len(parts) == 4 && parts[3] == "add-image" && r.Method == http.MethodPost {
+		h.AddImageToToteHandler(w, r)
 		return
 	}
 
@@ -681,6 +859,7 @@ func (h *Handler) ToteHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+		convertImagePathsToURLs(tote)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(tote)
 
@@ -697,6 +876,7 @@ func (h *Handler) ToteHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		convertImagePathsToURLs(tote)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(tote)
 
@@ -732,6 +912,7 @@ func (h *Handler) ToteByQRCodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	convertImagePathsToURLs(tote)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tote)
 }
@@ -749,7 +930,7 @@ func (h *Handler) ExportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename := fmt.Sprintf("totetrax-export-%s.json", time.Now().Format("2006-01-02"))
+	filename := fmt.Sprintf("kontainer-export-%s.json", time.Now().Format("2006-01-02"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	json.NewEncoder(w).Encode(totes)
@@ -770,11 +951,29 @@ func (h *Handler) ImportHandler(w http.ResponseWriter, r *http.Request) {
 
 	imported := 0
 	for _, tote := range totes {
+		// Prepare image data arrays from the imported tote
+		var imagePaths []string
+		var imageTypes []string
+		
+		if tote.Images != nil && len(tote.Images) > 0 {
+			// Use images array if available (base64 data URIs)
+			for _, img := range tote.Images {
+				imagePaths = append(imagePaths, img.ImageData)
+				imageTypes = append(imageTypes, img.ImageType)
+			}
+		} else if tote.ImagePath != "" {
+			// Fallback to single image_path for backward compatibility
+			imagePaths = []string{tote.ImagePath}
+		}
+
 		req := models.ToteCreateRequest{
 			Name:        tote.Name,
 			Description: tote.Description,
 			Items:       tote.Items,
+			Location:    tote.Location,
 			ImagePath:   tote.ImagePath,
+			ImagePaths:  imagePaths,
+			ImageTypes:  imageTypes,
 		}
 		_, err := h.toteService.Create(req)
 		if err == nil {
@@ -816,73 +1015,118 @@ func (h *Handler) APISettingsHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(settings)
 
 	case http.MethodPut:
-		var settings models.Settings
-		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+		var newSettings models.Settings
+		if err := json.NewDecoder(r.Body).Decode(&newSettings); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if err := h.settingsService.SaveSettings(&settings); err != nil {
+		// Load current settings to check if database path changed
+		currentSettings, err := h.settingsService.LoadSettings()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Check if database path changed
+		if currentSettings.DatabasePath != newSettings.DatabasePath && newSettings.DatabasePath != "" {
+			// Migrate database to new location
+			oldPath := currentSettings.DatabasePath
+			if oldPath == "" {
+				oldPath = "kontainer.db" // Default path
+			}
+			
+			if err := h.settingsService.MigrateDatabase(oldPath, newSettings.DatabasePath); err != nil {
+				http.Error(w, fmt.Sprintf("Failed to migrate database: %v", err), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Save new settings
+		if err := h.settingsService.SaveSettings(&newSettings); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(settings)
+		json.NewEncoder(w).Encode(newSettings)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-// UploadImageHandler handles POST /api/upload-image
+// UploadImageHandler is now deprecated - images are sent as base64 in request body
+// Keeping for backward compatibility
 func (h *Handler) UploadImageHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	http.Error(w, "Image upload deprecated - send base64 data in request body", http.StatusGone)
+}
+
+// AddImageToToteHandler handles POST /api/tote/{id}/add-image
+func (h *Handler) AddImageToToteHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract tote ID from path
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.Error(w, "Invalid tote ID", http.StatusBadRequest)
+		return
+	}
+
+	toteID, err := strconv.Atoi(parts[2])
+	if err != nil {
+		http.Error(w, "Invalid tote ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get image data from request body (base64 data URI)
+	var req struct {
+		ImageData string `json:"image_data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Add image to tote
+	image, err := h.toteService.AddImage(toteID, req.ImageData)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(image)
+}
+
+// ToteImageHandler handles DELETE /api/tote-image/{id}
+func (h *Handler) ToteImageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Parse multipart form (max 10MB)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		http.Error(w, "File too large", http.StatusBadRequest)
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.Error(w, "Invalid image ID", http.StatusBadRequest)
 		return
 	}
 
-	file, header, err := r.FormFile("image")
+	imageID, err := strconv.Atoi(parts[2])
 	if err != nil {
-		http.Error(w, "No file uploaded", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// Create uploads directory if it doesn't exist
-	uploadDir := "web/static/images/uploads"
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		http.Error(w, "Failed to create upload directory", http.StatusInternalServerError)
+		http.Error(w, "Invalid image ID", http.StatusBadRequest)
 		return
 	}
 
-	// Generate unique filename
-	ext := filepath.Ext(header.Filename)
-	filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-	filepath := filepath.Join(uploadDir, filename)
-
-	// Create destination file
-	dst, err := os.Create(filepath)
-	if err != nil {
-		http.Error(w, "Failed to save file", http.StatusInternalServerError)
-		return
-	}
-	defer dst.Close()
-
-	// Copy uploaded file to destination
-	if _, err := io.Copy(dst, file); err != nil {
-		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+	if err := h.toteService.DeleteImage(imageID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Return the file path
-	relativePath := "/static/images/uploads/" + filename
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"path": relativePath})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ServeImageHandler is now deprecated - images are served as base64 data URIs
+// Keeping for backward compatibility
+func (h *Handler) ServeImageHandler(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "Image serving deprecated - images are base64 encoded", http.StatusGone)
 }

@@ -1,0 +1,7 @@
+# Docker-specific files
+.env
+docker-compose.override.yml
+
+# Development
+*.dev
+*.local
