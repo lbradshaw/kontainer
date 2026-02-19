@@ -33,7 +33,7 @@ A self-hosted, cross-platform inventory management system for tracking items in 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/kontainer.git
+git clone https://github.com/lbradshaw/kontainer.git
 cd kontainer
 
 # Start with Docker Compose
@@ -48,9 +48,9 @@ See [DOCKER.md](DOCKER.md) for detailed Docker deployment, NAS setup, and config
 
 Download the latest release for your platform:
 
-- [Windows (amd64)](https://github.com/yourusername/kontainer/releases/latest)
-- [Linux (amd64)](https://github.com/yourusername/kontainer/releases/latest)
-- [macOS (amd64/arm64)](https://github.com/yourusername/kontainer/releases/latest)
+- [Windows (amd64)](https://github.com/lbradshaw/kontainer/releases/latest)
+- [Linux (amd64)](https://github.com/lbradshaw/kontainer/releases/latest)
+- [macOS (amd64/arm64)](https://github.com/lbradshaw/kontainer/releases/latest)
 
 ```bash
 # Linux/macOS
@@ -69,7 +69,7 @@ kontainer.exe
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/kontainer.git
+git clone https://github.com/lbradshaw/kontainer.git
 cd kontainer
 
 # Build
@@ -156,8 +156,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Support
 
-- **Issues:** [GitHub Issues](https://github.com/yourusername/kontainer/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/yourusername/kontainer/discussions)
+- **Issues:** [GitHub Issues](https://github.com/lbradshaw/kontainer/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/lbradshaw/kontainer/discussions)
 
 ---
 
