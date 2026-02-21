@@ -6,10 +6,12 @@ on:
       - 'v*'
 
 jobs:
-  # ─── Build binaries for all platforms ────────────────────────────────────────
+  # ─── Build binaries and upload directly to the release ───────────────────────
   build-binaries:
     name: Build ${{ matrix.asset_name }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -51,11 +53,11 @@ jobs:
         run: |
           go build -ldflags="-w -s" -o ${{ matrix.asset_name }} cmd/kontainer/main.go
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload binary to release
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ matrix.asset_name }}
-          path: ${{ matrix.asset_name }}
+          files: ${{ matrix.asset_name }}
+          generate_release_notes: true
 
   # ─── Build and push multi-arch Docker image to ghcr.io ───────────────────────
   build-docker:
@@ -103,22 +105,3 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─── Create GitHub Release and attach binaries ───────────────────────────────
-  release:
-    name: Create GitHub Release
-    needs: [build-binaries, build-docker]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download all binary artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create release and upload binaries
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*
-          generate_release_notes: true
