@@ -32,6 +32,17 @@ A self-hosted, cross-platform inventory management system for tracking items in 
 
 ### Docker (Recommended)
 
+**Option A — Pre-built image (no clone needed):**
+
+```bash
+docker pull ghcr.io/lbradshaw/kontainer:latest
+docker run -d -p 3818:3818 -v kontainer_data:/app/data ghcr.io/lbradshaw/kontainer:latest
+
+# Access at http://localhost:3818
+```
+
+**Option B — Build from source with Docker Compose:**
+
 ```bash
 # Clone the repository
 git clone https://github.com/lbradshaw/kontainer.git
