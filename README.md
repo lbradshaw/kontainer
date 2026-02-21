@@ -47,14 +47,33 @@ See [DOCKER.md](DOCKER.md) for detailed Docker deployment, NAS setup, and config
 
 ### Pre-built Binaries
 
-Download the latest release for your platform:
+Download the latest release binary for your platform directly from the [Releases page](https://github.com/lbradshaw/kontainer/releases/latest):
 
-- [Windows (amd64)](https://github.com/lbradshaw/kontainer/releases/latest)
-- [Linux (amd64)](https://github.com/lbradshaw/kontainer/releases/latest)
-- [macOS (amd64/arm64)](https://github.com/lbradshaw/kontainer/releases/latest)
+| Platform | Architecture | Download |
+|----------|-------------|---------|
+| **Windows** | 64-bit (Intel/AMD) | [kontainer-windows-amd64.exe](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-windows-amd64.exe) |
+| **Linux** | 64-bit (Intel/AMD) | [kontainer-linux-amd64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-amd64) |
+| **Linux** | 64-bit ARM (Raspberry Pi 3/4/5) | [kontainer-linux-arm64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-arm64) |
+| **Linux** | 32-bit ARM (Raspberry Pi 2/3) | [kontainer-linux-arm-v7](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-arm-v7) |
+| **macOS** | Intel | [kontainer-darwin-amd64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-darwin-amd64) |
+| **macOS** | Apple Silicon (M1/M2/M3) | [kontainer-darwin-arm64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-darwin-arm64) |
+
+> **macOS note:** You may need to right-click → Open the first time to bypass Gatekeeper, as the binary is unsigned.
+
+### Docker Image
+
+A multi-arch Docker image is available from the GitHub Container Registry, supporting `linux/amd64`, `linux/arm64`, and `linux/arm/v7` (works on Windows and macOS via Docker Desktop):
 
 ```bash
-# Linux/macOS
+docker pull ghcr.io/lbradshaw/kontainer:latest
+```
+
+See the [Packages page](https://github.com/lbradshaw/kontainer/pkgs/container/kontainer) for all available image tags. See [DOCKER.md](DOCKER.md) for full Docker deployment instructions.
+
+After downloading a binary:
+
+```bash
+# Linux/macOS — make executable first
 chmod +x kontainer
 ./kontainer
 
