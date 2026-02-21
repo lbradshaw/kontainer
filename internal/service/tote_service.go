@@ -666,3 +666,57 @@ func (s *ToteService) GetImage(imageID int) (*models.ToteImage, error) {
 	img.ImageData = "data:" + img.ImageType + ";base64," + base64Encode(imageData)
 	return &img, nil
 }
+
+// ImportTote inserts a tote with its original ID, QR code, parent_id, depth, and
+// timestamps fully preserved. Uses INSERT OR REPLACE so calling "delete all" then
+// importing a backup performs a complete restore.
+func (s *ToteService) ImportTote(tote models.Tote) error {
+	_, err := s.db.Exec(`
+		INSERT OR REPLACE INTO totes
+			(id, name, description, items, location, image_path, qr_code, parent_id, depth, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, tote.ID, tote.Name, tote.Description, tote.Items, tote.Location,
+		tote.ImagePath, tote.QRCode, tote.ParentID, tote.Depth,
+		tote.CreatedAt, tote.UpdatedAt)
+	if err != nil {
+		return err
+	}
+
+	// Delete any existing images for this tote (handles OR REPLACE case)
+	s.db.Exec("DELETE FROM tote_images WHERE tote_id = ?", tote.ID)
+
+	// Re-insert images preserving display order
+	for i, img := range tote.Images {
+		if img.ImageData == "" {
+			continue
+		}
+		imageBlob, imageType, err := decodeBase64Image(img.ImageData)
+		if err != nil {
+			continue
+		}
+		mimeType := img.ImageType
+		if mimeType == "" {
+			mimeType = imageType
+		}
+		order := img.DisplayOrder
+		if order == 0 {
+			order = i
+		}
+		s.db.Exec(`
+			INSERT INTO tote_images (tote_id, image_data, image_type, display_order, created_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, tote.ID, imageBlob, mimeType, order, img.CreatedAt)
+	}
+
+	return nil
+}
+
+// ResetAutoIncrement advances the SQLite auto-increment counter to be above the
+// highest existing tote ID, so new containers created after an import don't
+// collide with the imported IDs.
+func (s *ToteService) ResetAutoIncrement() {
+	s.db.Exec(`
+		INSERT OR REPLACE INTO sqlite_sequence (name, seq)
+		VALUES ('totes', (SELECT COALESCE(MAX(id), 0) FROM totes))
+	`)
+}

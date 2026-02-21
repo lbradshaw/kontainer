@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -946,7 +947,8 @@ func (h *Handler) ExportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totes, err := h.toteService.GetAll()
+	// Export ALL totes including sub-containers so hierarchy is fully preserved on import
+	totes, err := h.toteService.GetAllIncludingChildren()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -971,37 +973,42 @@ func (h *Handler) ImportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sort parents before children so foreign key references are satisfied
+	sort.Slice(totes, func(i, j int) bool {
+		return totes[i].Depth < totes[j].Depth
+	})
+
 	imported := 0
 	for _, tote := range totes {
-		// Prepare image data arrays from the imported tote
-		var imagePaths []string
-		var imageTypes []string
-		
-		if tote.Images != nil && len(tote.Images) > 0 {
-			// Use images array if available (base64 data URIs)
+		if tote.ID == 0 {
+			// Legacy export without IDs: fall back to creating a new tote
+			var imagePaths, imageTypes []string
 			for _, img := range tote.Images {
 				imagePaths = append(imagePaths, img.ImageData)
 				imageTypes = append(imageTypes, img.ImageType)
 			}
-		} else if tote.ImagePath != "" {
-			// Fallback to single image_path for backward compatibility
-			imagePaths = []string{tote.ImagePath}
-		}
-
-		req := models.ToteCreateRequest{
-			Name:        tote.Name,
-			Description: tote.Description,
-			Items:       tote.Items,
-			Location:    tote.Location,
-			ImagePath:   tote.ImagePath,
-			ImagePaths:  imagePaths,
-			ImageTypes:  imageTypes,
-		}
-		_, err := h.toteService.Create(req)
-		if err == nil {
-			imported++
+			req := models.ToteCreateRequest{
+				Name:        tote.Name,
+				Description: tote.Description,
+				Items:       tote.Items,
+				Location:    tote.Location,
+				ParentID:    tote.ParentID,
+				ImagePaths:  imagePaths,
+				ImageTypes:  imageTypes,
+			}
+			if _, err := h.toteService.Create(req); err == nil {
+				imported++
+			}
+		} else {
+			// Preserve original ID, QR code, parent_id, depth, and timestamps
+			if err := h.toteService.ImportTote(tote); err == nil {
+				imported++
+			}
 		}
 	}
+
+	// Advance the auto-increment counter so new containers don't collide with imported IDs
+	h.toteService.ResetAutoIncrement()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"imported": imported})
