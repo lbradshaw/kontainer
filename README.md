@@ -11,12 +11,13 @@ A self-hosted, cross-platform inventory management system for tracking items in 
 ## ✨ Features
 
 - 📦 **Container Tracking** - Track unlimited storage containers with names, descriptions, and locations
+- 📂 **Sub-Containers** - Organize items in a 2-level hierarchy (e.g., a shelf inside a room, a bag inside a box)
 - 🖼️ **Image Galleries** - Add multiple photos of container contents stored securely in the database
 - 🏷️ **QR Code Labels** - Auto-generate unique QR codes for instant container lookup
 - 📝 **Item Lists** - Maintain detailed inventories of what's in each container
-- 🔍 **Quick Search** - Find items across all containers instantly
+- 🔍 **Quick Search** - Find items across all containers and sub-containers instantly
 - 🖨️ **Printable Labels** - Generate printer-ready labels with QR codes
-- 📥 **Import/Export** - Backup and restore your entire inventory as JSON
+- 📥 **Import/Export** - Backup and restore your entire inventory as JSON (including sub-containers)
 - 🌓 **Dark/Light Modes** - Choose your preferred theme
 - 🐳 **Docker Support** - Deploy easily on NAS, Raspberry Pi, or cloud servers
 - 💾 **Local-First** - All data stored locally in SQLite (no cloud dependencies)
@@ -99,22 +100,25 @@ go build -o kontainer cmd/kontainer/main.go
 Kontainer provides a full REST API for automation and integrations:
 
 ```bash
-# List all containers
+# List top-level containers (dashboard view)
 GET /api/totes
 
-# Get container by ID
+# List all containers including sub-containers (search)
+GET /api/totes/all
+
+# Get container by ID (includes sub-containers array for top-level)
 GET /api/tote/{id}
 
 # Look up by QR code
 GET /api/tote/qr/{qr_code}
 
-# Create container
+# Create container (add parent_id to create a sub-container)
 POST /api/tote
 
 # Update container
 PUT /api/tote/{id}
 
-# Delete container
+# Delete container (cascades to sub-containers)
 DELETE /api/tote/{id}
 
 # Export all data

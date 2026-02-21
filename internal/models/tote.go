@@ -17,11 +17,14 @@ type Tote struct {
 	ID          int         `json:"id"`
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
-	Items       string      `json:"items"`        // Text list of items (newline separated)
-	Location    string      `json:"location"`     // Physical location (e.g., "Garage", "Basement")
-	ImagePath   string      `json:"image_path"`   // Legacy: Path to first uploaded image (for backward compatibility)
-	Images      []ToteImage `json:"images"`       // Array of images
-	QRCode      string      `json:"qr_code"`      // QR code identifier (TOTE-XXXXX)
+	Items       string      `json:"items"`             // Text list of items (newline separated)
+	Location    string      `json:"location"`          // Physical location (e.g., "Garage", "Basement")
+	ImagePath   string      `json:"image_path"`        // Legacy: Path to first uploaded image (for backward compatibility)
+	Images      []ToteImage `json:"images"`            // Array of images
+	QRCode      string      `json:"qr_code"`           // QR code identifier (TOTE-XXXXX)
+	ParentID    *int        `json:"parent_id,omitempty"` // Parent container ID (null for top-level)
+	Depth       int         `json:"depth"`             // Nesting depth: 0=top-level, 1=sub-container
+	Children    []Tote      `json:"children,omitempty"` // Sub-containers (only loaded when needed)
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
@@ -32,9 +35,10 @@ type ToteCreateRequest struct {
 	Description string   `json:"description"`
 	Items       string   `json:"items"`
 	Location    string   `json:"location"`
-	ImagePath   string   `json:"image_path"`    // Legacy single image (base64)
-	ImagePaths  []string `json:"image_paths"`   // Multiple images (base64)
-	ImageTypes  []string `json:"image_types"`   // MIME types for images
+	ParentID    *int     `json:"parent_id,omitempty"` // Optional parent container ID
+	ImagePath   string   `json:"image_path"`          // Legacy single image (base64)
+	ImagePaths  []string `json:"image_paths"`         // Multiple images (base64)
+	ImageTypes  []string `json:"image_types"`         // MIME types for images
 }
 
 // ToteUpdateRequest represents the data that can be updated

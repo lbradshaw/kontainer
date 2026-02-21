@@ -807,6 +807,28 @@ func (h *Handler) TotesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(totes)
 }
 
+// AllTotesHandler handles GET /api/totes/all - returns ALL totes including sub-containers
+func (h *Handler) AllTotesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	totes, err := h.toteService.GetAllIncludingChildren()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert file paths to web URLs
+	for i := range totes {
+		convertImagePathsToURLs(&totes[i])
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(totes)
+}
+
 // ToteCreateHandler handles POST /api/tote
 func (h *Handler) ToteCreateHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

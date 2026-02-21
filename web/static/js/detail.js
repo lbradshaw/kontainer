@@ -27,6 +27,16 @@ function loadToteDetail() {
 }
 
 function displayToteDetail(tote) {
+	// Build breadcrumb if this is a sub-container
+	let breadcrumbHtml = '';
+	if (tote.parent_id) {
+		breadcrumbHtml = `
+			<div style="margin-bottom: 1rem; padding: 0.5rem; background: #f0f0f0; border-radius: 5px;">
+				<a href="/tote/${tote.parent_id}" style="color: #2196F3; text-decoration: none;">← Back to Parent Container</a>
+			</div>
+		`;
+	}
+
 	// Build images gallery HTML
 	let imagesHtml = '';
 	if (tote.images && tote.images.length > 0) {
@@ -62,12 +72,43 @@ function displayToteDetail(tote) {
 			</div>`
 		: '';
 
-	const html = `
-		<div class="detail-header">
-			<h2>${tote.name}</h2>
-			<div class="tote-qr-code" style="font-size: 1.1rem; margin-top: 0.5rem;">${tote.qr_code}</div>
-		</div>
+	// Build sub-containers section (only for top-level containers)
+	let childrenHtml = '';
+	if (tote.depth === 0 && tote.children && tote.children.length > 0) {
+		childrenHtml = `
+			<div style="margin: 2rem 0;">
+				<h3 style="margin-bottom: 1rem;">Sub-Containers (${tote.children.length})</h3>
+				<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem;">
+					${tote.children.map(child => {
+						const childImage = child.images && child.images.length > 0 
+							? `<img src="${child.images[0].image_data}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 5px 5px 0 0;">`
+							: '<div style="width: 100%; height: 120px; background: #f5f5f5; border-radius: 5px 5px 0 0; display: flex; align-items: center; justify-content: center;">📦</div>';
+						
+						return `
+							<div onclick="window.location.href='/tote/${child.id}'" style="cursor: pointer; border: 1px solid #ddd; border-radius: 5px; overflow: hidden; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+								${childImage}
+								<div style="padding: 1rem;">
+									<div style="font-weight: 600; margin-bottom: 0.5rem;">${child.name}</div>
+									<div style="font-size: 0.85rem; color: #666;">${child.qr_code}</div>
+									${child.description ? `<div style="font-size: 0.85rem; color: #888; margin-top: 0.3rem;">${child.description}</div>` : ''}
+								</div>
+							</div>
+						`;
+					}).join('')}
+				</div>
+			</div>
+		`;
+	}
 
+	// Show "Add Sub-Container" button only for top-level containers
+	const addSubContainerBtn = tote.depth === 0 
+		? `<button class="btn btn-primary" onclick="window.location.href='/add?parent_id=${tote.id}'" style="margin-left: 0.5rem;">
+				➕ Add Sub-Container
+			</button>`
+		: '';
+
+	// Hide QR code section for sub-containers
+	const qrSectionHtml = tote.depth === 0 ? `
 		<div class="detail-qr-section">
 			<div class="detail-qr-code">
 				<div id="qrcode"></div>
@@ -92,10 +133,44 @@ function displayToteDetail(tote) {
 				</div>
 			</div>
 		</div>
+	` : `
+		<div class="detail-info">
+			${descriptionHtml}
+			${locationHtml}
+			<div class="detail-row">
+				<label>Type</label>
+				<div class="value" style="color: #FF9800; font-weight: 600;">📦 Sub-Container</div>
+			</div>
+			<div class="detail-row">
+				<label>Total Images</label>
+				<div class="value">${tote.images ? tote.images.length : 0}</div>
+			</div>
+			<div class="detail-row">
+				<label>Created</label>
+				<div class="value">${new Date(tote.created_at).toLocaleDateString()}</div>
+			</div>
+			<div class="detail-row">
+				<label>Last Updated</label>
+				<div class="value">${new Date(tote.updated_at).toLocaleDateString()}</div>
+			</div>
+		</div>
+	`;
+
+	const html = `
+		${breadcrumbHtml}
+		<div class="detail-header">
+			<h2>${tote.name}</h2>
+			<div class="tote-qr-code" style="font-size: 1.1rem; margin-top: 0.5rem;">${tote.qr_code}</div>
+			${addSubContainerBtn}
+		</div>
+
+		${qrSectionHtml}
 
 		${imagesHtml}
 
 		${itemsHtml}
+
+		${childrenHtml}
 	`;
 
 	document.getElementById('tote-detail').innerHTML = html;
@@ -138,14 +213,18 @@ function closeImageModal() {
 }
 
 function generateQRCode(qrText) {
-	new QRCode(document.getElementById('qrcode'), {
-		text: qrText,
-		width: 150,
-		height: 150,
-		colorDark: '#000000',
-		colorLight: '#ffffff',
-		correctLevel: QRCode.CorrectLevel.H
-	});
+	// Only generate QR code if the qrcode div exists (not shown for sub-containers)
+	const qrcodeDiv = document.getElementById('qrcode');
+	if (qrcodeDiv) {
+		new QRCode(qrcodeDiv, {
+			text: qrText,
+			width: 150,
+			height: 150,
+			colorDark: '#000000',
+			colorLight: '#ffffff',
+			correctLevel: QRCode.CorrectLevel.H
+		});
+	}
 }
 
 function deleteTote() {

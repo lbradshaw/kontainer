@@ -10,8 +10,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	if (isEditMode) {
 		loadToteData();
+	} else {
+		// Check if parent_id is in URL params (creating sub-container)
+		const urlParams = new URLSearchParams(window.location.search);
+		const parentId = urlParams.get('parent_id');
+		if (parentId) {
+			loadParentInfo(parentId);
+		}
 	}
 });
+
+function loadParentInfo(parentId) {
+	fetch(`/api/tote/${parentId}`)
+		.then(response => response.json())
+		.then(parent => {
+			// Add breadcrumb/info about parent
+			const formContainer = document.querySelector('.form-container');
+			const breadcrumb = document.createElement('div');
+			breadcrumb.style.cssText = 'margin-bottom: 1rem; padding: 1rem; background: #e3f2fd; border-radius: 5px; border-left: 4px solid #2196F3;';
+			breadcrumb.innerHTML = `
+				<strong>Creating Sub-Container for:</strong><br>
+				<a href="/tote/${parent.id}" style="color: #2196F3; text-decoration: none; font-size: 1.1rem;">
+					← ${parent.name} (${parent.qr_code})
+				</a>
+			`;
+			formContainer.insertBefore(breadcrumb, formContainer.firstChild);
+
+			// Pre-populate location with parent name and parent location
+			const locationField = document.getElementById('location');
+			if (locationField && !locationField.value) {
+				const parentLocation = parent.location ? `${parent.name}/${parent.location}` : parent.name;
+				locationField.value = parentLocation;
+			}
+		})
+		.catch(error => {
+			console.error('Error loading parent info:', error);
+		});
+}
 
 function setupForm() {
 	const form = document.getElementById('tote-form');
@@ -145,6 +180,9 @@ async function handleSubmit(e) {
 		}
 	} else {
 		// For create mode, include all uploaded images as base64
+		const urlParams = new URLSearchParams(window.location.search);
+		const parentId = urlParams.get('parent_id');
+		
 		const toteData = {
 			name,
 			description,
@@ -153,6 +191,11 @@ async function handleSubmit(e) {
 			image_paths: uploadedImages.map(img => img.data),
 			image_types: uploadedImages.map(img => img.type)
 		};
+
+		// Add parent_id if creating a sub-container
+		if (parentId) {
+			toteData.parent_id = parseInt(parentId);
+		}
 
 		try {
 			const response = await fetch('/api/tote', {
@@ -164,14 +207,15 @@ async function handleSubmit(e) {
 			});
 
 			if (!response.ok) {
-				throw new Error('Failed to create tote');
+				const error = await response.text();
+				throw new Error(error || 'Failed to create tote');
 			}
 
 			const tote = await response.json();
 			window.location.href = `/tote/${tote.id}`;
 		} catch (error) {
 			console.error('Error creating tote:', error);
-			alert('Error creating tote');
+			alert('Error creating tote: ' + error.message);
 		}
 	}
 }

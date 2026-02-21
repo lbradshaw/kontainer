@@ -1,6 +1,7 @@
 // app.js - Main dashboard functionality
 
-let allTotes = [];
+let allTotes = []; // Top-level totes only
+let allTotesIncludingChildren = []; // All totes for search
 
 // Load totes on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -9,6 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function loadTotes() {
+	// Load top-level for display
 	fetch('/api/totes')
 		.then(response => response.json())
 		.then(totes => {
@@ -21,6 +23,16 @@ function loadTotes() {
 			document.getElementById('totes-grid').innerHTML = 
 				'<div class="loading">Error loading totes</div>';
 		});
+	
+	// Load all totes (including children) for search
+	fetch('/api/totes/all')
+		.then(response => response.json())
+		.then(totes => {
+			allTotesIncludingChildren = totes || [];
+		})
+		.catch(error => {
+			console.error('Error loading all totes:', error);
+		});
 }
 
 function updateStats() {
@@ -30,6 +42,9 @@ function updateStats() {
 function displayTotes(totes) {
 	const grid = document.getElementById('totes-grid');
 	const emptyState = document.getElementById('empty-state');
+
+	// Update currently displayed totes for image preview
+	currentlyDisplayedTotes = totes;
 
 	if (!totes || totes.length === 0) {
 		grid.style.display = 'none';
@@ -62,6 +77,15 @@ function displayTotes(totes) {
 			? `<div class="tote-location" style="font-size: 0.85rem; color: #666; margin: 0.3rem 0;">📍 ${tote.location}</div>`
 			: '';
 
+		// Show parent breadcrumb for sub-containers
+		const breadcrumbHtml = tote.depth === 1 && tote.parent_id
+			? `<div style="font-size: 0.8rem; color: #FF9800; margin-bottom: 0.3rem;">📦 Sub-Container</div>`
+			: '';
+
+		const childrenCount = tote.depth === 0 && tote.children && tote.children.length > 0
+			? `<span class="children-badge" style="background: #4CAF50; color: white; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.8rem; margin-left: 0.5rem;">${tote.children.length} sub</span>`
+			: '';
+
 		const itemsPreview = tote.items 
 			? `<div class="tote-items-preview">${tote.items.split('\n').slice(0, 3).join('\n')}</div>`
 			: '';
@@ -70,7 +94,8 @@ function displayTotes(totes) {
 			<div class="tote-card" onclick="window.location.href='/tote/${tote.id}'">
 				<div class="tote-card-header">
 					<div>
-						<h3>${tote.name}</h3>
+						${breadcrumbHtml}
+						<h3>${tote.name}${childrenCount}</h3>
 						<div class="tote-qr-code">${tote.qr_code}</div>
 					</div>
 				</div>
@@ -84,12 +109,13 @@ function displayTotes(totes) {
 }
 
 let imagePreviewTimeout;
+let currentlyDisplayedTotes = []; // Track what's currently shown
 
 function showImagePreview(event, toteId) {
 	event.stopPropagation();
 	
-	// Find the tote
-	const tote = allTotes.find(t => t.id === toteId);
+	// Find the tote in currently displayed set
+	const tote = currentlyDisplayedTotes.find(t => t.id === toteId);
 	if (!tote || !tote.images || tote.images.length === 0) return;
 	
 	// Clear any existing timeout
@@ -152,7 +178,7 @@ function hideImagePreview() {
 function enlargeImage(event, toteId, imageIndex) {
 	event.stopPropagation();
 	
-	const tote = allTotes.find(t => t.id === toteId);
+	const tote = currentlyDisplayedTotes.find(t => t.id === toteId);
 	if (!tote || !tote.images || !tote.images[imageIndex]) return;
 	
 	// Create enlarged image modal
@@ -181,11 +207,13 @@ function setupSearch() {
 		const query = e.target.value.toLowerCase();
 		
 		if (!query) {
+			// No search - show only top-level totes
 			displayTotes(allTotes);
 			return;
 		}
 
-		const filtered = allTotes.filter(tote => {
+		// Search in all totes (including sub-containers)
+		const filtered = allTotesIncludingChildren.filter(tote => {
 			return tote.name.toLowerCase().includes(query) ||
 				(tote.description && tote.description.toLowerCase().includes(query)) ||
 				(tote.items && tote.items.toLowerCase().includes(query)) ||

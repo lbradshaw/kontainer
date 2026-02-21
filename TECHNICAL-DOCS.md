@@ -1,11 +1,11 @@
 # Kontainer - Complete Technical Documentation
 
 **Project Name:** Kontainer  
-**Version:** 1.7.0  
+**Version:** 1.8.0  
 **Created:** 2026-02-14  
-**Last Updated:** 2026-02-19  
+**Last Updated:** 2026-02-21  
 **Technology:** Go 1.24.0 + SQLite + HTML/CSS/JavaScript  
-**Purpose:** Storage container inventory management with database-embedded images and mobile companion app
+**Purpose:** Storage container inventory management with database-embedded images and hierarchical sub-containers
 
 ---
 
@@ -32,12 +32,13 @@ Kontainer helps users organize and track items stored in boxes, totes, bins, and
 ### Key Features
 - ✅ Track storage containers with names, descriptions, and item lists
 - ✅ **Location tracking** (optional physical location field for each container)
+- ✅ **Sub-containers** (2-level hierarchy: top-level containers and their children)
 - ✅ **Multiple images per container** (unlimited)
 - ✅ **Images stored in database as BLOBs** (no orphaned files, fully portable)
 - ✅ Auto-generated QR codes (TOTE-XXXXX format)
 - ✅ QR code lookup via image upload or manual entry (web UI)
 - ✅ Printable labels with QR codes
-- ✅ Search across names, descriptions, and item lists
+- ✅ Search across names, descriptions, and item lists (including sub-containers)
 - ✅ **Import/Export functionality with full image support** (JSON with base64 images)
 - ✅ **Dashboard quick access** (Export/Import buttons)
 - ✅ **Settings page data management** (Export/Import/Delete All)
@@ -46,7 +47,7 @@ Kontainer helps users organize and track items stored in boxes, totes, bins, and
 - ✅ **Configurable settings page** (port, database path, theme)
 - ✅ **Light/Dark theme toggle** (instant application)
 - ✅ **Network database support** (NAS/network drive compatible)
-- ✅ **Automatic orphan prevention** (images deleted with tote via CASCADE)
+- ✅ **Automatic orphan prevention** (images and sub-containers deleted with parent via CASCADE)
 - ✅ **Image hover gallery** (hover over card image to preview all images)
 - ✅ **Modal image viewer** (click on gallery thumbnails for full-size view)
 - ✅ **Full card clickable** (entire tote card navigates to edit page)
@@ -66,44 +67,44 @@ Kontainer helps users organize and track items stored in boxes, totes, bins, and
 
 ### Project Structure
 ```
-D:\projects\kontainer\
-├── cmd\
-│   └── totetrax\
+kontainer/
+├── cmd/
+│   └── kontainer/
 │       └── main.go                 # Application entry point
-├── internal\
-│   ├── api\
-│   │   ├── handlers.go            # HTTP request handlers (600+ lines)
+├── internal/
+│   ├── api/
+│   │   ├── handlers.go            # HTTP request handlers
 │   │   └── router.go              # Route definitions
-│   ├── database\
+│   ├── database/
 │   │   └── database.go            # SQLite initialization & schema
-│   ├── models\
+│   ├── models/
 │   │   ├── tote.go                # Tote and ToteImage models
 │   │   └── settings.go            # Application settings model
-│   └── service\
+│   └── service/
 │       ├── tote_service.go        # Business logic for totes & images
 │       └── settings_service.go    # Settings management
-├── web\
-│   └── static\
-│       ├── css\
+├── web/
+│   └── static/
+│       ├── css/
 │       │   └── style.css          # Application styles (dark mode support)
-│       ├── js\
+│       ├── js/
 │       │   ├── app.js             # Dashboard functionality
 │       │   ├── form.js            # Add/Edit forms with multi-image upload
 │       │   ├── detail.js          # Tote detail page with image gallery
 │       │   ├── settings-page.js   # Settings page functionality
 │       │   ├── qrcode.min.js      # QR code generation
 │       │   └── html5-qrcode.min.js # QR code scanning
-│       └── images\
-│           └── uploads\           # User-uploaded images
+│       └── images/
+│           └── uploads/           # User-uploaded images (legacy file-based)
 ├── go.mod                          # Go module definition
 ├── go.sum                          # Dependency checksums
 ├── kontainer.exe                   # Compiled Windows binary
 ├── kontainer.db                    # SQLite database (auto-created)
 ├── settings.json                   # Runtime settings (auto-created)
 ├── README.md                       # User documentation
-├── QUICKSTART.md                   # Quick reference guide
-├── totetrax-project-info.md        # Project context (legacy name)
-├── totetrax-technical-docs.md      # This file (legacy name)
+├── DOCKER.md                       # Docker deployment guide
+├── TECHNICAL-DOCS.md               # This file
+├── CONTRIBUTING.md                 # Contribution guidelines
 └── .gitignore                      # Git ignore rules
 ```
 
@@ -131,12 +132,15 @@ CREATE TABLE IF NOT EXISTS totes (
     location TEXT,                           -- Optional physical location (e.g., "Garage", "Basement")
     image_path TEXT,                         -- Legacy field (first image for backward compatibility)
     qr_code TEXT UNIQUE NOT NULL,            -- Format: TOTE-00001, TOTE-00002, etc.
+    parent_id INTEGER NULL REFERENCES totes(id) ON DELETE CASCADE, -- v1.8.0: parent container (NULL = top-level)
+    depth INTEGER NOT NULL DEFAULT 0 CHECK (depth IN (0, 1)),      -- v1.8.0: nesting level (0=top-level, 1=sub)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_name ON totes(name);
 CREATE INDEX IF NOT EXISTS idx_qr_code ON totes(qr_code);
+CREATE INDEX IF NOT EXISTS idx_parent_id ON totes(parent_id); -- v1.8.0
 ```
 
 **Key Points:**
@@ -144,6 +148,9 @@ CREATE INDEX IF NOT EXISTS idx_qr_code ON totes(qr_code);
 - `location` is optional and stores where the container is physically located
 - `image_path` kept for backward compatibility (stores first image)
 - `items` is a multi-line text field (one item per line)
+- `parent_id` is `NULL` for top-level containers; references the parent's `id` for sub-containers
+- `depth` enforces maximum 2-level hierarchy (0 = top-level, 1 = sub-container)
+- Deleting a parent container **cascades** and removes all its sub-containers automatically
 
 #### `tote_images` Table
 Stores multiple images per tote as embedded binary data.
@@ -174,6 +181,8 @@ CREATE INDEX IF NOT EXISTS idx_tote_images_tote_id ON tote_images(tote_id);
 - Schema auto-creates on first run via `database.InitDB()`
 - **Automatic migration system** adds new columns to existing databases
 - `location` column automatically added if missing (v1.7.0+)
+- `parent_id` and `depth` columns automatically added if missing (v1.8.0+)
+- `idx_parent_id` index automatically created if missing (v1.8.0+)
 - Backward compatible: Adding `tote_images` table doesn't break existing data
 - No migration scripts needed - SQLite handles `CREATE TABLE IF NOT EXISTS`
 
@@ -190,7 +199,7 @@ func main() {
     settings, err := settingsService.LoadSettings()
     
     // 2. Initialize SQLite database
-    db, err := database.InitDB("totetrax.db")
+    db, err := database.InitDB("kontainer.db")
     defer db.Close()
     
     // 3. Create service layer
@@ -214,16 +223,18 @@ type ToteService struct {
 }
 
 // CRUD Operations
-func (s *ToteService) GetAll() ([]models.Tote, error)
-func (s *ToteService) GetByID(id int) (*models.Tote, error)
+func (s *ToteService) GetAll() ([]models.Tote, error)                        // Top-level only (depth=0)
+func (s *ToteService) GetAllIncludingChildren() ([]models.Tote, error)       // All totes including sub-containers
+func (s *ToteService) GetChildren(parentID int) ([]models.Tote, error)       // Sub-containers of a parent
+func (s *ToteService) GetByID(id int) (*models.Tote, error)                  // Includes children array if any
 func (s *ToteService) GetByQRCode(qrCode string) (*models.Tote, error)
-func (s *ToteService) Create(req models.ToteCreateRequest) (*models.Tote, error)
+func (s *ToteService) Create(req models.ToteCreateRequest) (*models.Tote, error) // Accepts optional ParentID
 func (s *ToteService) Update(id int, req models.ToteUpdateRequest) (*models.Tote, error)
-func (s *ToteService) Delete(id int) error
+func (s *ToteService) Delete(id int) error                                   // Cascades to sub-containers
 func (s *ToteService) DeleteAll() (int, error)
 
 // Image Management
-func (s *ToteService) AddImage(toteID int, imagePath string) (*models.ToteImage, error)
+func (s *ToteService) AddImage(toteID int, imageData string) (*models.ToteImage, error)
 func (s *ToteService) DeleteImage(imageID int) error
 func (s *ToteService) GetImage(imageID int) (*models.ToteImage, error)
 
@@ -274,11 +285,12 @@ func (s *ToteService) loadImagesForTotes(totes []models.Tote) ([]models.Tote, er
 ### Models: `internal/models/tote.go`
 
 ```go
-// ToteImage represents a single image
+// ToteImage represents a single image attached to a tote
 type ToteImage struct {
     ID           int       `json:"id"`
     ToteID       int       `json:"tote_id"`
-    ImagePath    string    `json:"image_path"`
+    ImageData    string    `json:"image_data"`      // Base64 data URI (data:image/jpeg;base64,...)
+    ImageType    string    `json:"image_type"`      // MIME type (image/jpeg, image/png, etc.)
     DisplayOrder int       `json:"display_order"`
     CreatedAt    time.Time `json:"created_at"`
 }
@@ -288,10 +300,14 @@ type Tote struct {
     ID          int         `json:"id"`
     Name        string      `json:"name"`
     Description string      `json:"description"`
-    Items       string      `json:"items"`
-    ImagePath   string      `json:"image_path"`   // Legacy: first image
-    Images      []ToteImage `json:"images"`       // NEW: all images
-    QRCode      string      `json:"qr_code"`
+    Items       string      `json:"items"`             // Newline-separated item list
+    Location    string      `json:"location"`          // Physical location (e.g., "Garage", "Basement")
+    ImagePath   string      `json:"image_path"`        // Legacy: first image (backward compatibility)
+    Images      []ToteImage `json:"images"`            // All images for this container
+    QRCode      string      `json:"qr_code"`           // QR code identifier (TOTE-XXXXX)
+    ParentID    *int        `json:"parent_id,omitempty"` // Parent container ID (null for top-level)
+    Depth       int         `json:"depth"`             // Nesting depth: 0=top-level, 1=sub-container
+    Children    []Tote      `json:"children,omitempty"` // Sub-containers (populated on GET /api/tote/{id})
     CreatedAt   time.Time   `json:"created_at"`
     UpdatedAt   time.Time   `json:"updated_at"`
 }
@@ -301,22 +317,30 @@ type ToteCreateRequest struct {
     Name        string   `json:"name"`
     Description string   `json:"description"`
     Items       string   `json:"items"`
-    ImagePath   string   `json:"image_path"`    // Legacy: single image
-    ImagePaths  []string `json:"image_paths"`   // NEW: multiple images
+    Location    string   `json:"location"`
+    ParentID    *int     `json:"parent_id,omitempty"` // Optional: creates a sub-container if provided
+    ImagePath   string   `json:"image_path"`          // Legacy single image (base64)
+    ImagePaths  []string `json:"image_paths"`         // Multiple images (base64 data URIs)
+    ImageTypes  []string `json:"image_types"`         // MIME types corresponding to image_paths
 }
 
 // ToteUpdateRequest for PUT /api/tote/{id}
 type ToteUpdateRequest struct {
-    Name        *string `json:"name,omitempty"`
-    Description *string `json:"description,omitempty"`
-    Items       *string `json:"items,omitempty"`
-    ImagePath   *string `json:"image_path,omitempty"`
+    Name        *string  `json:"name,omitempty"`
+    Description *string  `json:"description,omitempty"`
+    Items       *string  `json:"items,omitempty"`
+    Location    *string  `json:"location,omitempty"`
+    ImagePath   *string  `json:"image_path,omitempty"`
+    ImagePaths  []string `json:"image_paths,omitempty"`   // New images to add (base64 data URIs)
+    ImageTypes  []string `json:"image_types,omitempty"`   // MIME types for new images
 }
 ```
 
 **Design Notes:**
 - `Images` array always populated on GET requests
 - `ImagePath` maintained for backward compatibility
+- `ParentID` is a pointer (nullable) - `nil` means top-level container
+- `Children` only populated on `GET /api/tote/{id}`, not on list endpoints
 - Update request uses pointers for optional fields (partial updates)
 
 ---
@@ -326,70 +350,111 @@ type ToteUpdateRequest struct {
 ### Tote Management
 
 #### `GET /api/totes`
-List all totes with images.
+List **top-level containers only** (`parent_id IS NULL`, `depth = 0`). Use this for the main dashboard view.
 
 **Response:**
 ```json
 [
   {
     "id": 1,
-    "name": "Kitchen Supplies",
-    "description": "Extra kitchen items",
-    "items": "4x Dish towels\n2x Pot holders\n1x Apron",
-    "image_path": "/static/images/uploads/12345.jpg",
+    "name": "Garage Box",
+    "description": "Main storage",
+    "items": "Hammer\nNails",
+    "location": "Garage",
+    "image_path": "",
     "images": [
       {
         "id": 1,
         "tote_id": 1,
-        "image_path": "/static/images/uploads/12345.jpg",
+        "image_data": "data:image/jpeg;base64,/9j/4AAQ...",
+        "image_type": "image/jpeg",
         "display_order": 0,
         "created_at": "2026-02-14T05:00:00Z"
-      },
-      {
-        "id": 2,
-        "tote_id": 1,
-        "image_path": "/static/images/uploads/12346.jpg",
-        "display_order": 1,
-        "created_at": "2026-02-14T05:01:00Z"
       }
     ],
     "qr_code": "TOTE-00001",
+    "depth": 0,
     "created_at": "2026-02-14T05:00:00Z",
     "updated_at": "2026-02-14T05:01:00Z"
   }
 ]
 ```
 
-#### `POST /api/tote`
-Create new tote with multiple images.
+#### `GET /api/totes/all`
+List **all containers including sub-containers**. Use this for search functionality.
 
-**Request:**
+**Response:** Same structure as `GET /api/totes` but includes containers at all depths.
+
+#### `POST /api/tote`
+Create a new container. Optionally provide `parent_id` to create a sub-container.
+
+**Request (top-level container):**
 ```json
 {
   "name": "Garage Tools",
   "description": "Hand tools and hardware",
-  "items": "2x Hammers\n1x Screwdriver set\n1x Drill bits",
-  "image_paths": [
-    "/static/images/uploads/12347.jpg",
-    "/static/images/uploads/12348.jpg",
-    "/static/images/uploads/12349.jpg"
-  ]
+  "items": "2x Hammers\n1x Screwdriver set",
+  "location": "Garage",
+  "image_paths": ["data:image/jpeg;base64,/9j/4AAQ..."],
+  "image_types": ["image/jpeg"]
 }
 ```
 
-**Response:** Same as GET (newly created tote)
+**Request (sub-container):**
+```json
+{
+  "name": "Small Parts",
+  "description": "Screws and bolts",
+  "items": "M3 screws\nM4 bolts",
+  "location": "Small Parts/Garage",
+  "parent_id": 1
+}
+```
+
+**Validation Rules:**
+- If `parent_id` is provided, the parent must exist
+- Parent must have `depth = 0` (sub-containers cannot themselves be parents)
+- Returns `500` with error message if depth limit is exceeded
+
+**Response:** The newly created tote object
 
 #### `GET /api/tote/{id}`
-Get single tote by ID.
+Get a single tote by ID. For top-level containers, the response includes a `children` array listing all sub-containers.
 
-**Response:** Single tote object (same structure as array item above)
+**Response (top-level with sub-containers):**
+```json
+{
+  "id": 1,
+  "name": "Garage Box",
+  "description": "Main storage",
+  "items": "Hammer\nNails",
+  "location": "Garage",
+  "qr_code": "TOTE-00001",
+  "depth": 0,
+  "children": [
+    {
+      "id": 2,
+      "name": "Small Parts",
+      "items": "Screws\nBolts",
+      "location": "Small Parts/Garage",
+      "qr_code": "TOTE-00002",
+      "parent_id": 1,
+      "depth": 1,
+      "created_at": "2026-02-20T00:00:00Z",
+      "updated_at": "2026-02-20T00:00:00Z"
+    }
+  ],
+  "created_at": "2026-02-14T05:00:00Z",
+  "updated_at": "2026-02-14T05:01:00Z"
+}
+```
 
 #### `GET /api/tote/qr/{qr_code}`
 Get tote by QR code.
 
 **Example:** `GET /api/tote/qr/TOTE-00001`
 
-**Response:** Single tote object
+**Response:** Single tote object (same structure as `GET /api/tote/{id}`)
 
 #### `PUT /api/tote/{id}`
 Update tote details (does NOT affect images).
@@ -472,36 +537,45 @@ Export all totes as JSON with full image arrays.
 [
   {
     "id": 1,
-    "name": "Kitchen Supplies",
-    "description": "Kitchen items",
-    "items": "4x Dish towels\n2x Pot holders",
+    "name": "Garage Box",
+    "description": "Main storage",
+    "items": "Hammer\nNails",
+    "location": "Garage",
     "image_path": "",
     "images": [
       {
-        "id": 3,
+        "id": 1,
         "tote_id": 1,
-        "image_path": "/static/images/uploads/1771058813249973700.jpg",
-        "display_order": 1,
+        "image_data": "data:image/jpeg;base64,/9j/4AAQ...",
+        "image_type": "image/jpeg",
+        "display_order": 0,
         "created_at": "2026-02-14T00:00:00Z"
-      },
-      {
-        "id": 4,
-        "tote_id": 1,
-        "image_path": "/static/images/uploads/1771058813255059400.png",
-        "display_order": 2,
-        "created_at": "2026-02-14T00:00:01Z"
       }
     ],
     "qr_code": "TOTE-00001",
+    "parent_id": null,
+    "depth": 0,
     "created_at": "2026-02-14T00:00:00Z",
     "updated_at": "2026-02-14T00:00:00Z"
+  },
+  {
+    "id": 2,
+    "name": "Small Parts",
+    "items": "Screws\nBolts",
+    "location": "Small Parts/Garage",
+    "images": [],
+    "qr_code": "TOTE-00002",
+    "parent_id": 1,
+    "depth": 1,
+    "created_at": "2026-02-20T00:00:00Z",
+    "updated_at": "2026-02-20T00:00:00Z"
   }
 ]
 ```
 
 **Implementation:**
-- Uses `GetAll()` which loads all images via `loadImagesForTotes()`
-- Includes complete images array with all metadata
+- Uses `GetAllIncludingChildren()` so sub-containers are included
+- Includes complete images array with base64-encoded image data
 - Filename format: `kontainer-export-2026-02-14.json`
 - Content-Type: `application/json`
 - Content-Disposition: `attachment` (auto-download)
@@ -520,29 +594,24 @@ Import totes from JSON array with full image support.
 
 **Behavior:** 
 - **Additive operation** - Creates new totes, does not update existing
-- **Multiple images support** - Extracts from `images` array
+- **Multiple images support** - Extracts from `images` array with base64 data
 - **Backward compatible** - Falls back to single `image_path` if `images` is null
-- **Image preservation** - All images recreated in new totes via `ImagePaths`
+- **Sub-container support** - Imports hierarchy if `parent_id` and `depth` fields are present
+- Old exports (v1.7 and earlier, without `parent_id`) import correctly as top-level containers
 
 **Image Handling Logic:**
 ```go
 var imagePaths []string
 if tote.Images != nil && len(tote.Images) > 0 {
-    // Use images array (preferred)
+    // Use images array (preferred, contains base64 data)
     for _, img := range tote.Images {
-        imagePaths = append(imagePaths, img.ImagePath)
+        imagePaths = append(imagePaths, img.ImageData)
     }
 } else if tote.ImagePath != "" {
     // Fallback to single image_path
     imagePaths = []string{tote.ImagePath}
 }
 ```
-
-**Important Notes:**
-- Image files must exist at the paths specified in the JSON
-- Import does NOT copy/move image files - assumes they exist
-- For cross-system imports, ensure image files are copied to `web/static/images/uploads/`
-- Image paths are relative: `/static/images/uploads/filename.ext`
 
 #### `DELETE /api/totes/delete-all`
 Delete all totes (with cascade to images).
@@ -586,10 +655,10 @@ Update settings (requires app restart).
 
 All pages served as inline HTML from `handlers.go`:
 
-1. **Dashboard** (`/`) - `IndexHandler()`
-2. **Add Tote** (`/add`) - `AddToteHandler()`
+1. **Dashboard** (`/`) - `IndexHandler()` — lists top-level containers only
+2. **Add Tote** (`/add`) - `AddToteHandler()` — supports `?parent_id={id}` for sub-container creation
 3. **Edit Tote** (`/edit?id={id}`) - `EditToteHandler()`
-4. **Tote Detail** (`/tote/{id}`) - `ToteDetailHandler()`
+4. **Tote Detail** (`/tote/{id}`) - `ToteDetailHandler()` — shows sub-containers section for top-level containers
 5. **QR Scanner** (`/scan`) - `ScanHandler()`
 6. **Settings** (`/settings`) - `SettingsPageHandler()`
 7. **Print Label** (`/print-label/{id}`) - `PrintLabelHandler()`
@@ -648,6 +717,7 @@ function hideImageGallery() {
 let allTotes = [];
 
 function loadTotes() {
+    // Fetches top-level containers only (depth=0)
     fetch('/api/totes')
         .then(response => response.json())
         .then(totes => {
@@ -657,178 +727,86 @@ function loadTotes() {
         });
 }
 
-function displayTotes(totes) {
-    // Renders tote cards
-    // Shows first image if available
-    // Truncates item list to 3 lines
-}
-
 function setupSearch() {
+    // Search fetches ALL containers (including sub-containers) via /api/totes/all
     // Real-time search across name, description, items, qr_code
 }
-
-// Export all totes as JSON
-function exportData() {
-    window.location.href = '/api/export';
-    // Triggers download of kontainer-export-YYYY-MM-DD.json
-}
-
-// Import totes from JSON file
-async function importData(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // Confirmation dialog
-    if (!confirm(`Import data from ${file.name}?\n\nThis will ADD the totes from the file to your existing inventory.`)) {
-        event.target.value = '';
-        return;
-    }
-
-    try {
-        const text = await file.text();
-        const response = await fetch('/api/import', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: text
-        });
-
-        const result = await response.json();
-        alert(`Successfully imported ${result.imported} tote(s)!`);
-        window.location.reload();  // Refresh to show new totes
-    } catch (error) {
-        console.error('Error importing data:', error);
-        alert('Error importing data. Please check the file format.');
-    } finally {
-        event.target.value = '';  // Reset file input
-    }
-}
-```
-
-**Dashboard UI Elements:**
-```html
-<!-- Export button -->
-<button class="btn btn-secondary" onclick="exportData()">
-    📥 Export
-</button>
-
-<!-- Import button -->
-<button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">
-    📤 Import
-</button>
-
-<!-- Hidden file input -->
-<input type="file" id="import-file" accept=".json" style="display: none;" onchange="importData(event)">
 ```
 
 #### `form.js` - Add/Edit Form Logic
 
-**Critical Implementation Details:**
+**Sub-Container Creation:**
+
+When the URL contains `?parent_id={id}`, the form is in sub-container creation mode:
 
 ```javascript
-let uploadedImagePaths = [];  // Stores paths of uploaded images
-
-// Multi-file handling
-async function setupImagePreview() {
-    const imageInput = document.getElementById('image');
-    imageInput.addEventListener('change', async function(e) {
-        const files = e.target.files;
-        uploadedImagePaths = [];
-        
-        // Upload all files immediately
-        for (let i = 0; i < files.length; i++) {
-            await uploadImage(files[i]);
-        }
-    });
+const parentId = urlParams.get('parent_id');
+if (parentId) {
+    loadParentInfo(parentId);
 }
 
-async function uploadImage(file) {
-    const formData = new FormData();
-    formData.append('image', file);
-    
-    const response = await fetch('/api/upload-image', {
-        method: 'POST',
-        body: formData
-    });
-    
-    const data = await response.json();
-    uploadedImagePaths.push(data.path);
-}
-
-// CREATE MODE
-async function handleSubmit(e) {
-    if (!isEditMode) {
-        const toteData = {
-            name,
-            description,
-            items,
-            image_paths: uploadedImagePaths  // All uploaded images
-        };
-        
-        await fetch('/api/tote', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(toteData)
+function loadParentInfo(parentId) {
+    fetch(`/api/tote/${parentId}`)
+        .then(response => response.json())
+        .then(parent => {
+            // Show breadcrumb linking back to parent
+            // Pre-populate location: "parentName/parentLocation" (editable)
+            const locationField = document.getElementById('location');
+            if (locationField && !locationField.value) {
+                locationField.value = parent.location
+                    ? `${parent.name}/${parent.location}`
+                    : parent.name;
+            }
         });
-    }
-}
-
-// EDIT MODE - ADDITIVE BEHAVIOR
-async function handleSubmit(e) {
-    if (isEditMode) {
-        // Update tote details first
-        await fetch(`/api/tote/${toteId}`, {
-            method: 'PUT',
-            body: JSON.stringify({ name, description, items })
-        });
-        
-        // ADD new images (does not replace existing)
-        for (const imagePath of uploadedImagePaths) {
-            await fetch(`/api/tote/${toteId}/add-image`, {
-                method: 'POST',
-                body: JSON.stringify({ image_path: imagePath })
-            });
-        }
-    }
 }
 ```
 
+**Create Mode — key fields submitted:**
+
+```javascript
+const toteData = {
+    name,
+    description,
+    items,
+    location,
+    image_paths: uploadedImages.map(img => img.data),   // base64 data URIs
+    image_types: uploadedImages.map(img => img.type)
+};
+
+if (parentId) {
+    toteData.parent_id = parseInt(parentId);  // Include for sub-container
+}
+
+await fetch('/api/tote', { method: 'POST', body: JSON.stringify(toteData) });
+```
+
 **Key Points:**
-- Images upload **immediately** on file selection
-- Preview shown while uploading
-- Edit mode shows existing images with "✓ Will be kept" indicator
-- New images **added** via `/add-image` endpoint
+- Images converted to base64 via `FileReader.readAsDataURL()` client-side
+- Location field pre-populated when creating sub-containers (always editable)
+- Edit mode is **additive** — new images added, existing images never replaced
 
 #### `detail.js` - Tote Detail Page
 
+**Key behaviors:**
+- For top-level containers (`depth=0`): displays a "Sub-Containers" section listing children, with an "Add Sub-Container" button that links to `/add?parent_id={id}`
+- For sub-containers (`depth=1`): displays a back-link breadcrumb to the parent container
+- Image gallery with per-image delete buttons
+- QR code generated for all containers (top-level and sub-containers)
+
 ```javascript
-function displayToteDetail(tote) {
-    // Image gallery with delete buttons
-    let imagesHtml = '<div class="images-gallery">';
-    tote.images.forEach(img => {
-        imagesHtml += `
-            <div class="image-item">
-                <img src="${img.image_path}" class="detail-image">
-                <button onclick="deleteImage(${img.id})" class="btn btn-danger">
-                    🗑️ Delete
-                </button>
-            </div>
-        `;
-    });
-    
-    // QR code generation
-    new QRCode(document.getElementById('qrcode'), {
-        text: tote.qr_code,
-        width: 150,
-        height: 150,
-        correctLevel: QRCode.CorrectLevel.H
-    });
+// Sub-container section (shown for depth=0 containers)
+if (tote.children && tote.children.length > 0) {
+    // Renders list of child containers with links to their detail pages
 }
 
-function deleteImage(imageId) {
-    if (!confirm('Delete this image?')) return;
-    
-    fetch(`/api/tote-image/${imageId}`, { method: 'DELETE' })
-        .then(() => window.location.reload());
+// "Add Sub-Container" button (only for depth=0)
+if (tote.depth === 0) {
+    // Button links to /add?parent_id={tote.id}
+}
+
+// Parent breadcrumb (shown for depth=1 containers)
+if (tote.parent_id) {
+    // Shows link back to parent container
 }
 ```
 
@@ -844,7 +822,7 @@ async function loadSettings() {
     
     // Populate form
     document.getElementById('port').value = settings.port || 3818;
-    document.getElementById('database_path').value = settings.database_path || 'totetrax.db';
+    document.getElementById('database_path').value = settings.database_path || 'kontainer.db';
     document.getElementById('theme').value = settings.theme || 'light';
     
     // Apply theme from server settings
@@ -879,7 +857,7 @@ async function saveSettings() {
     
     // Save theme to localStorage for instant UI updates
     const localSettings = {theme: settings.theme};
-    localStorage.setItem('totetrax_settings', JSON.stringify(localSettings));
+    localStorage.setItem('kontainer_settings', JSON.stringify(localSettings));
     
     // Apply theme immediately (no restart)
     applyTheme(settings.theme);
@@ -902,7 +880,7 @@ async function resetSettings() {
     
     const defaults = {
         port: 3818,
-        database_path: 'totetrax.db',
+        database_path: 'kontainer.db',
         theme: 'light'
     };
     
@@ -912,7 +890,7 @@ async function resetSettings() {
         body: JSON.stringify(defaults)
     });
     
-    localStorage.removeItem('totetrax_settings');
+    localStorage.removeItem('kontainer_settings');
     window.location.reload();
 }
 
@@ -980,7 +958,7 @@ async function deleteAllData() {
 }
     });
     
-    localStorage.removeItem('totetrax_settings');
+    localStorage.removeItem('kontainer_settings');
     window.location.reload();
 }
 ```
@@ -1138,7 +1116,7 @@ tote.images.forEach(img => {
 ✅ **Fully Portable**
 - Single `.db` file contains everything
 - Copy database = copy all data + all images
-- Example: `totetrax.db` is 45MB with 100 images
+- Example: `kontainer.db` is 45MB with 100 images
 
 ✅ **Simplified Backups**
 - Backup 1 file instead of DB + image folder
@@ -1146,7 +1124,7 @@ tote.images.forEach(img => {
 - Export JSON contains embedded images (base64)
 
 ✅ **Network Storage Ready**
-- Set database to NAS: `\\NAS\share\totetrax.db`
+- Set database to NAS: `\\NAS\share\kontainer.db`
 - All images automatically stored in same database
 - Multiple computers access same data + images
 
@@ -1159,13 +1137,13 @@ tote.images.forEach(img => {
 
 ```
 \\NAS\Inventory\
-└── totetrax.db         (contains everything: data + images)
+└── kontainer.db         (contains everything: data + images)
 ```
 
 Compared to old file-based approach:
 ```
 \\NAS\Inventory\
-├── totetrax.db         (data only)
+├── kontainer.db         (data only)
 └── tote_images\        (separate folder, can get orphaned)
     ├── 1739497234567890123.jpg
     ├── 1739497234567890124.png
@@ -1220,7 +1198,7 @@ func DefaultSettings() *Settings {
     return &Settings{
         Port:         3818,
         Theme:        "light",
-        DatabasePath: "totetrax.db",
+        DatabasePath: "kontainer.db",
     }
 }
 ```
@@ -1234,7 +1212,7 @@ func DefaultSettings() *Settings {
 {
   "port": 3818,
   "theme": "light",
-  "database_path": "totetrax.db"
+  "database_path": "kontainer.db"
 }
 ```
 
@@ -1243,7 +1221,7 @@ func DefaultSettings() *Settings {
 {
   "port": 3818,
   "theme": "dark",
-  "database_path": "\\\\192.168.1.100\\storage\\totetrax.db"
+  "database_path": "\\\\192.168.1.100\\storage\\kontainer.db"
 }
 ```
 
@@ -1252,7 +1230,7 @@ func DefaultSettings() *Settings {
 {
   "port": 3818,
   "theme": "dark",
-  "database_path": "/mnt/nas/totetrax.db"
+  "database_path": "/mnt/nas/kontainer.db"
 }
 ```
 
@@ -1269,9 +1247,9 @@ func DefaultSettings() *Settings {
    - Default: 3818
 
 2. **Database Path Configuration**
-   - Supports local paths: `totetrax.db`, `C:\data\totetrax.db`
-   - Supports network paths: `\\NAS\share\totetrax.db`
-   - Supports Linux paths: `/mnt/nas/totetrax.db`
+   - Supports local paths: `kontainer.db`, `C:\data\kontainer.db`
+   - Supports network paths: `\\NAS\share\kontainer.db`
+   - Supports Linux paths: `/mnt/nas/kontainer.db`
    - **Requires app restart** to take effect
    - Enables database on NAS or network drive
 
@@ -1302,7 +1280,7 @@ async function saveSettings() {
     applyTheme(settings.theme);
     
     // Save to localStorage for instant UI update
-    localStorage.setItem('totetrax_settings', JSON.stringify({theme: settings.theme}));
+    localStorage.setItem('kontainer_settings', JSON.stringify({theme: settings.theme}));
 }
 ```
 
@@ -1320,7 +1298,7 @@ func main() {
     // 2. Use configured database path
     dbPath := settings.DatabasePath
     if dbPath == "" {
-        dbPath = "totetrax.db" // Fallback
+        dbPath = "kontainer.db" // Fallback
     }
     db, err := database.InitDB(dbPath)
     
@@ -1349,8 +1327,8 @@ func main() {
 1. Ensure NAS is accessible and mounted
 2. Open Settings page
 3. Enter database path:
-   - **Windows:** `\\192.168.1.100\storage\totetrax.db`
-   - **Linux:** `/mnt/nas/totetrax.db`
+   - **Windows:** `\\192.168.1.100\storage\kontainer.db`
+   - **Linux:** `/mnt/nas/kontainer.db`
 4. Click "Save Settings"
 5. **Confirm the migration** when prompted
 6. Wait for migration to complete (database automatically copied to new location)
@@ -1408,7 +1386,7 @@ Get current settings.
 {
   "port": 3818,
   "theme": "dark",
-  "database_path": "\\\\NAS\\share\\totetrax.db"
+  "database_path": "\\\\NAS\\share\\kontainer.db"
 }
 ```
 
@@ -1420,7 +1398,7 @@ Update settings.
 {
   "port": 8080,
   "theme": "light",
-  "database_path": "/mnt/nas/totetrax.db"
+  "database_path": "/mnt/nas/kontainer.db"
 }
 ```
 
@@ -1433,7 +1411,7 @@ Update settings.
 
 ### Data Management & Backup
 
-ToteTrax provides comprehensive data management features accessible from both the **Dashboard** and **Settings** page.
+kontainer provides comprehensive data management features accessible from both the **Dashboard** and **Settings** page.
 
 #### Dashboard Quick Access
 
@@ -1572,17 +1550,17 @@ if (confirmation !== 'YES') {
 
 #### Cross-System Migration
 
-To move ToteTrax to another computer:
+To move kontainer to another computer:
 
 1. **Export data** on old system
 2. **Copy image folder**: `web/static/images/uploads/`
-3. **Install ToteTrax** on new system
+3. **Install kontainer** on new system
 4. **Paste image folder** to new installation
 5. **Import data** on new system
 6. Verify all images display correctly
 
 **Alternative (Network Database):**
-1. Configure Settings → Database Path: `\\NAS\share\totetrax.db`
+1. Configure Settings → Database Path: `\\NAS\share\kontainer.db`
 2. All systems share same database
 3. All systems access same image folder on network
 4. No export/import needed
@@ -1591,7 +1569,7 @@ To move ToteTrax to another computer:
 
 **Windows:**
 ```powershell
-New-NetFirewallRule -DisplayName "ToteTrax Web Server" -Direction Inbound -LocalPort 3818 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "kontainer Web Server" -Direction Inbound -LocalPort 3818 -Protocol TCP -Action Allow
 ```
 
 **Linux (ufw):**
@@ -1605,7 +1583,7 @@ sudo ufw allow 3818/tcp
 
 ### Prerequisites
 
-- Go 1.25 or later
+- Go 1.24 or later
 - No other dependencies (pure Go SQLite driver)
 
 ### Building
@@ -1615,13 +1593,13 @@ sudo ufw allow 3818/tcp
 go mod download
 
 # Build for current OS
-go build -o totetrax cmd/kontainer/main.go
+go build -o kontainer cmd/kontainer/main.go
 
 # Build for Windows (from any OS)
-GOOS=windows GOARCH=amd64 go build -o totetrax.exe cmd/kontainer/main.go
+GOOS=windows GOARCH=amd64 go build -o kontainer.exe cmd/kontainer/main.go
 
 # Build for Linux (from any OS)
-GOOS=linux GOARCH=amd64 go build -o totetrax cmd/kontainer/main.go
+GOOS=linux GOARCH=amd64 go build -o kontainer cmd/kontainer/main.go
 ```
 
 ### Running in Development
@@ -1641,7 +1619,7 @@ air
 ```bash
 # Stop server
 # Delete database
-rm totetrax.db
+rm kontainer.db
 
 # Restart server - fresh database created
 go run cmd/kontainer/main.go
@@ -1669,15 +1647,23 @@ go run cmd/kontainer/main.go
 
 **Using curl:**
 ```bash
-# Get all totes
+# Get all top-level totes
 curl http://localhost:3818/api/totes
 
-# Create tote
+# Get all totes including sub-containers
+curl http://localhost:3818/api/totes/all
+
+# Create top-level tote
 curl -X POST http://localhost:3818/api/tote \
   -H "Content-Type: application/json" \
-  -d '{"name":"Test","items":"Item 1\nItem 2","image_paths":["/static/images/uploads/test.jpg"]}'
+  -d '{"name":"Garage Box","location":"Garage","items":"Hammer\nNails"}'
 
-# Get by ID
+# Create sub-container
+curl -X POST http://localhost:3818/api/tote \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Small Parts","location":"Small Parts/Garage","parent_id":1}'
+
+# Get by ID (includes children array)
 curl http://localhost:3818/api/tote/1
 
 # Get by QR code
@@ -1686,6 +1672,31 @@ curl http://localhost:3818/api/tote/qr/TOTE-00001
 # Delete image
 curl -X DELETE http://localhost:3818/api/tote-image/5
 ```
+
+### Feature Testing Checklist
+
+#### Sub-Containers
+- [ ] Create top-level container
+- [ ] Create sub-container from parent detail page
+- [ ] Location field pre-populated when creating sub-container
+- [ ] Sub-container shows parent breadcrumb in detail view
+- [ ] Edit sub-container maintains parent relationship
+- [ ] Delete parent removes all children (cascade)
+- [ ] Main dashboard shows only top-level containers
+- [ ] Sub-containers listed in parent detail view
+- [ ] Search (`/api/totes/all`) finds items in sub-containers
+- [ ] Cannot create sub-container inside a sub-container (depth limit enforced)
+- [ ] Export includes `parent_id` and `depth` fields
+- [ ] Import old export (without `parent_id`) works as top-level containers
+
+#### General
+- [ ] Create, edit, delete containers
+- [ ] Upload and delete images
+- [ ] QR code generation and scanning
+- [ ] Export and re-import preserves all data
+- [ ] Dark/light theme toggle
+- [ ] Port and database path changes (requires restart)
+- [ ] Network database path works
 
 ---
 
@@ -1700,18 +1711,18 @@ curl -X DELETE http://localhost:3818/api/tote-image/5
 
 **Files needed:**
 ```
-totetrax.exe          (or totetrax on Linux)
+kontainer.exe          (or kontainer on Linux)
 web/                  (entire directory with static assets)
 ```
 
 ### Directory Structure on Server
 
 ```
-/opt/totetrax/        (or C:\Apps\ToteTrax on Windows)
-├── totetrax          (executable)
+/opt/kontainer/        (or C:\Apps\kontainer on Windows)
+├── kontainer          (executable)
 ├── web/              (copied from source)
 │   └── static/
-├── totetrax.db       (created on first run)
+├── kontainer.db       (created on first run)
 └── settings.json     (created on first run)
 ```
 
@@ -1719,17 +1730,17 @@ web/                  (entire directory with static assets)
 
 **Linux (systemd):**
 
-Create `/etc/systemd/system/totetrax.service`:
+Create `/etc/systemd/system/kontainer.service`:
 ```ini
 [Unit]
-Description=ToteTrax Storage Inventory
+Description=kontainer Storage Inventory
 After=network.target
 
 [Service]
 Type=simple
-User=totetrax
-WorkingDirectory=/opt/totetrax
-ExecStart=/opt/totetrax/totetrax
+User=kontainer
+WorkingDirectory=/opt/kontainer
+ExecStart=/opt/kontainer/kontainer
 Restart=always
 
 [Install]
@@ -1738,15 +1749,15 @@ WantedBy=multi-user.target
 
 Enable:
 ```bash
-sudo systemctl enable totetrax
-sudo systemctl start totetrax
+sudo systemctl enable kontainer
+sudo systemctl start kontainer
 ```
 
 **Windows (NSSM):**
 ```powershell
-nssm install ToteTrax "C:\Apps\ToteTrax\totetrax.exe"
-nssm set ToteTrax AppDirectory "C:\Apps\ToteTrax"
-nssm start ToteTrax
+nssm install kontainer "C:\Apps\kontainer\kontainer.exe"
+nssm set kontainer AppDirectory "C:\Apps\kontainer"
+nssm start kontainer
 ```
 
 ### Reverse Proxy (Optional)
@@ -1755,7 +1766,7 @@ nssm start ToteTrax
 ```nginx
 server {
     listen 80;
-    server_name totetrax.example.com;
+    server_name kontainer.example.com;
 
     location / {
         proxy_pass http://localhost:3818;
@@ -1767,7 +1778,7 @@ server {
 
 **Caddy:**
 ```
-totetrax.example.com {
+kontainer.example.com {
     reverse_proxy localhost:3818
 }
 ```
@@ -1775,31 +1786,31 @@ totetrax.example.com {
 ### Backup Strategy
 
 **What to backup:**
-1. `totetrax.db` - All data
+1. `kontainer.db` - All data
 2. `web/static/images/uploads/` - User-uploaded images
 3. `settings.json` - Configuration
 
 **Backup script (Linux):**
 ```bash
 #!/bin/bash
-BACKUP_DIR="/backups/totetrax/$(date +%Y%m%d)"
+BACKUP_DIR="/backups/kontainer/$(date +%Y%m%d)"
 mkdir -p "$BACKUP_DIR"
-cp /opt/totetrax/totetrax.db "$BACKUP_DIR/"
-cp -r /opt/totetrax/web/static/images/uploads "$BACKUP_DIR/"
-cp /opt/totetrax/settings.json "$BACKUP_DIR/"
+cp /opt/kontainer/kontainer.db "$BACKUP_DIR/"
+cp -r /opt/kontainer/web/static/images/uploads "$BACKUP_DIR/"
+cp /opt/kontainer/settings.json "$BACKUP_DIR/"
 ```
 
 **Restore:**
 ```bash
 # Stop service
-sudo systemctl stop totetrax
+sudo systemctl stop kontainer
 
 # Restore files
-cp backup/totetrax.db /opt/totetrax/
-cp -r backup/uploads/* /opt/totetrax/web/static/images/uploads/
+cp backup/kontainer.db /opt/kontainer/
+cp -r backup/uploads/* /opt/kontainer/web/static/images/uploads/
 
 # Start service
-sudo systemctl start totetrax
+sudo systemctl start kontainer
 ```
 
 ---
@@ -1909,13 +1920,13 @@ chmod 755 web/static/images/uploads
 **Solutions:**
 ```bash
 # Check for .db-journal file
-ls -la totetrax.db*
+ls -la kontainer.db*
 
 # Remove if present and no instances running
-rm totetrax.db-journal
+rm kontainer.db-journal
 
 # Ensure only one instance running
-ps aux | grep totetrax
+ps aux | grep kontainer
 ```
 
 ---
@@ -1929,50 +1940,51 @@ ps aux | grep totetrax
    - Saved to localStorage and settings.json
    - No restart required
 
-2. **Image Reordering**
+2. ~~**Location Tracking**~~ ✅ **IMPLEMENTED**
+   - `location` field on every container
+   - Sub-container location pre-populated from parent
+
+3. ~~**Sub-Containers**~~ ✅ **IMPLEMENTED**
+   - 2-level hierarchy (top-level + sub-containers)
+   - Cascade delete when parent is removed
+   - Sub-container count shown on parent detail
+
+4. **Image Reordering**
    - Drag-and-drop in gallery
    - Update `display_order` field
 
-3. **Bulk Operations**
+5. **Bulk Operations**
    - Select multiple totes
    - Bulk delete, export
 
-4. **Advanced Search**
+6. **Advanced Search**
    - Filter by date range
    - Filter by image count
    - Sort by various fields
 
-5. ~~**Settings Page**~~ ✅ **IMPLEMENTED**
+7. ~~**Settings Page**~~ ✅ **IMPLEMENTED**
    - Port configuration (1024-65535)
    - Database path (local or network/NAS)
    - Theme toggle with instant preview
 
-6. **Location Tracking**
-   - Add `storage_location` field (room, shelf, etc.)
-   - Group totes by location
-
-6. **Location Tracking**
-   - Add `storage_location` field (room, shelf, etc.)
-   - Group totes by location
-
-7. **Barcode Support**
+8. **Barcode Support**
    - Alternative to QR codes
    - Code 128 or Code 39
 
-7. **Mobile App**
+9. **Mobile App**
    - React Native or Flutter
    - Native camera/NFC for better scanning
 
-8. **Statistics Dashboard**
-   - Total containers
-   - Total items
-   - Storage utilization charts
+10. **Statistics Dashboard**
+    - Total containers
+    - Total items
+    - Storage utilization charts
 
-9. **Print Multiple Labels**
-   - Select multiple totes
-   - Generate PDF with all labels
+11. **Print Multiple Labels**
+    - Select multiple totes
+    - Generate PDF with all labels
 
-10. **CSV Export**
+12. **CSV Export**
     - Alternative to JSON
     - Better for spreadsheet users
 
@@ -2249,7 +2261,7 @@ ALTER TABLE totes ADD COLUMN user_id INTEGER;
 75c8b2b - Add multiple images support per tote
 8cd8b36 - Fix gitignore and add cmd/kontainer/main.go
 59f5644 - Add quick start guide and main.go
-8bb0a22 - Initial commit: ToteTrax storage container inventory management
+8bb0a22 - Initial commit: kontainer storage container inventory management
 ```
 
 ### .gitignore
@@ -2260,8 +2272,8 @@ ALTER TABLE totes ADD COLUMN user_id INTEGER;
 *.dll
 *.so
 *.dylib
-/totetrax
-/totetrax.exe
+/kontainer
+/kontainer.exe
 
 # Database
 *.db
@@ -2289,7 +2301,7 @@ web/static/images/uploads/
 
 ## Summary
 
-ToteTrax is a lightweight, self-contained storage inventory system built with:
+kontainer is a lightweight, self-contained storage inventory system built with:
 - **Go backend** with SQLite (pure Go driver)
 - **Vanilla JavaScript frontend**
 - **Multiple images per container** with additive uploads
@@ -2393,6 +2405,5 @@ ToteTrax is a lightweight, self-contained storage inventory system built with:
 
 **End of Technical Documentation**
 
-*Last Updated: 2026-02-17*  
-*Version: 1.8.0*  
-*Maintained at: D:\projects\totetrax\*
+*Last Updated: 2026-02-21*  
+*Version: 1.8.0*

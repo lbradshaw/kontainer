@@ -19,6 +19,11 @@ func InitDB(filepath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
 
+	// Enable foreign key constraints (required for CASCADE DELETE)
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return nil, fmt.Errorf("error enabling foreign keys: %w", err)
+	}
+
 	// Create tables
 	if err := createTables(db); err != nil {
 		return nil, fmt.Errorf("error creating tables: %w", err)
@@ -84,6 +89,46 @@ func runMigrations(db *sql.DB) error {
 		_, err = db.Exec("ALTER TABLE totes ADD COLUMN location TEXT")
 		if err != nil {
 			return fmt.Errorf("error adding location column: %w", err)
+		}
+	}
+
+	// Add parent_id column if it doesn't exist
+	err = db.QueryRow(`
+		SELECT COUNT(*) > 0 
+		FROM pragma_table_info('totes') 
+		WHERE name = 'parent_id'
+	`).Scan(&columnExists)
+	
+	if err != nil {
+		return fmt.Errorf("error checking for parent_id column: %w", err)
+	}
+
+	if !columnExists {
+		_, err = db.Exec("ALTER TABLE totes ADD COLUMN parent_id INTEGER REFERENCES totes(id) ON DELETE CASCADE")
+		if err != nil {
+			return fmt.Errorf("error adding parent_id column: %w", err)
+		}
+		_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_parent_id ON totes(parent_id)")
+		if err != nil {
+			return fmt.Errorf("error creating parent_id index: %w", err)
+		}
+	}
+
+	// Add depth column if it doesn't exist
+	err = db.QueryRow(`
+		SELECT COUNT(*) > 0 
+		FROM pragma_table_info('totes') 
+		WHERE name = 'depth'
+	`).Scan(&columnExists)
+	
+	if err != nil {
+		return fmt.Errorf("error checking for depth column: %w", err)
+	}
+
+	if !columnExists {
+		_, err = db.Exec("ALTER TABLE totes ADD COLUMN depth INTEGER NOT NULL DEFAULT 0 CHECK (depth IN (0, 1))")
+		if err != nil {
+			return fmt.Errorf("error adding depth column: %w", err)
 		}
 	}
 

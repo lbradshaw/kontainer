@@ -14,7 +14,8 @@ func NewRouter(toteService *service.ToteService, settingsService *service.Settin
 	handler := NewHandler(toteService, settingsService)
 
 	// API routes - Totes
-	mux.HandleFunc("/api/totes", handler.TotesHandler)              // GET all totes
+	mux.HandleFunc("/api/totes", handler.TotesHandler)              // GET all totes (top-level only)
+	mux.HandleFunc("/api/totes/all", handler.AllTotesHandler)       // GET all totes including sub-containers
 	mux.HandleFunc("/api/tote", handler.ToteCreateHandler)          // POST single tote
 	mux.HandleFunc("/api/tote/", handler.ToteHandler)               // GET/PUT/DELETE by ID or add image
 	mux.HandleFunc("/api/tote/qr/", handler.ToteByQRCodeHandler)    // GET by QR code

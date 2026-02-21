@@ -93,11 +93,12 @@ func (s *ToteService) loadImagesForTotes(totes []models.Tote) ([]models.Tote, er
 	return totes, nil
 }
 
-// GetAll retrieves all totes
+// GetAll retrieves all top-level totes (parent_id IS NULL)
 func (s *ToteService) GetAll() ([]models.Tote, error) {
 	query := `
-		SELECT id, name, description, items, location, image_path, qr_code, created_at, updated_at
+		SELECT id, name, description, items, location, image_path, qr_code, parent_id, depth, created_at, updated_at
 		FROM totes
+		WHERE parent_id IS NULL
 		ORDER BY created_at DESC
 	`
 
@@ -112,7 +113,7 @@ func (s *ToteService) GetAll() ([]models.Tote, error) {
 		var t models.Tote
 		err := rows.Scan(
 			&t.ID, &t.Name, &t.Description, &t.Items, &t.Location, &t.ImagePath,
-			&t.QRCode, &t.CreatedAt, &t.UpdatedAt,
+			&t.QRCode, &t.ParentID, &t.Depth, &t.CreatedAt, &t.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -124,10 +125,73 @@ func (s *ToteService) GetAll() ([]models.Tote, error) {
 	return s.loadImagesForTotes(totes)
 }
 
+// GetAllIncludingChildren retrieves all totes (including sub-containers)
+func (s *ToteService) GetAllIncludingChildren() ([]models.Tote, error) {
+	query := `
+		SELECT id, name, description, items, location, image_path, qr_code, parent_id, depth, created_at, updated_at
+		FROM totes
+		ORDER BY parent_id NULLS FIRST, created_at DESC
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var totes []models.Tote
+	for rows.Next() {
+		var t models.Tote
+		err := rows.Scan(
+			&t.ID, &t.Name, &t.Description, &t.Items, &t.Location, &t.ImagePath,
+			&t.QRCode, &t.ParentID, &t.Depth, &t.CreatedAt, &t.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		totes = append(totes, t)
+	}
+
+	// Load images for all totes
+	return s.loadImagesForTotes(totes)
+}
+
+// GetChildren retrieves all child totes for a parent tote
+func (s *ToteService) GetChildren(parentID int) ([]models.Tote, error) {
+	query := `
+		SELECT id, name, description, items, location, image_path, qr_code, parent_id, depth, created_at, updated_at
+		FROM totes
+		WHERE parent_id = ?
+		ORDER BY created_at ASC
+	`
+
+	rows, err := s.db.Query(query, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var children []models.Tote
+	for rows.Next() {
+		var t models.Tote
+		err := rows.Scan(
+			&t.ID, &t.Name, &t.Description, &t.Items, &t.Location, &t.ImagePath,
+			&t.QRCode, &t.ParentID, &t.Depth, &t.CreatedAt, &t.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, t)
+	}
+
+	// Load images for all children
+	return s.loadImagesForTotes(children)
+}
+
 // GetByID retrieves a tote by ID
 func (s *ToteService) GetByID(id int) (*models.Tote, error) {
 	query := `
-		SELECT id, name, description, items, location, image_path, qr_code, created_at, updated_at
+		SELECT id, name, description, items, location, image_path, qr_code, parent_id, depth, created_at, updated_at
 		FROM totes
 		WHERE id = ?
 	`
@@ -135,7 +199,7 @@ func (s *ToteService) GetByID(id int) (*models.Tote, error) {
 	var t models.Tote
 	err := s.db.QueryRow(query, id).Scan(
 		&t.ID, &t.Name, &t.Description, &t.Items, &t.Location, &t.ImagePath,
-		&t.QRCode, &t.CreatedAt, &t.UpdatedAt,
+		&t.QRCode, &t.ParentID, &t.Depth, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("tote not found")
@@ -150,6 +214,13 @@ func (s *ToteService) GetByID(id int) (*models.Tote, error) {
 		return nil, err
 	}
 	t.Images = images
+
+	// Load children for this tote
+	children, err := s.GetChildren(t.ID)
+	if err != nil {
+		return nil, err
+	}
+	t.Children = children
 
 	return &t, nil
 }
@@ -157,7 +228,7 @@ func (s *ToteService) GetByID(id int) (*models.Tote, error) {
 // GetByQRCode retrieves a tote by QR code
 func (s *ToteService) GetByQRCode(qrCode string) (*models.Tote, error) {
 	query := `
-		SELECT id, name, description, items, location, image_path, qr_code, created_at, updated_at
+		SELECT id, name, description, items, location, image_path, qr_code, parent_id, depth, created_at, updated_at
 		FROM totes
 		WHERE qr_code = ?
 	`
@@ -165,7 +236,7 @@ func (s *ToteService) GetByQRCode(qrCode string) (*models.Tote, error) {
 	var t models.Tote
 	err := s.db.QueryRow(query, qrCode).Scan(
 		&t.ID, &t.Name, &t.Description, &t.Items, &t.Location, &t.ImagePath,
-		&t.QRCode, &t.CreatedAt, &t.UpdatedAt,
+		&t.QRCode, &t.ParentID, &t.Depth, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("tote not found")
@@ -181,11 +252,39 @@ func (s *ToteService) GetByQRCode(qrCode string) (*models.Tote, error) {
 	}
 	t.Images = images
 
+	// Load children for this tote
+	children, err := s.GetChildren(t.ID)
+	if err != nil {
+		return nil, err
+	}
+	t.Children = children
+
 	return &t, nil
 }
 
 // Create creates a new tote
 func (s *ToteService) Create(req models.ToteCreateRequest) (*models.Tote, error) {
+	// Validate parent_id and calculate depth
+	depth := 0
+	if req.ParentID != nil {
+		// Check if parent exists
+		var parentDepth int
+		err := s.db.QueryRow("SELECT depth FROM totes WHERE id = ?", *req.ParentID).Scan(&parentDepth)
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("parent tote not found")
+		}
+		if err != nil {
+			return nil, err
+		}
+		
+		// Enforce depth limit: sub-containers can only be created under top-level containers
+		if parentDepth >= 1 {
+			return nil, fmt.Errorf("cannot create sub-container: maximum nesting depth (2 levels) exceeded")
+		}
+		
+		depth = parentDepth + 1
+	}
+
 	// Generate QR code (TOTE-XXXXX format)
 	var maxID int
 	err := s.db.QueryRow("SELECT COALESCE(MAX(id), 0) FROM totes").Scan(&maxID)
@@ -195,8 +294,8 @@ func (s *ToteService) Create(req models.ToteCreateRequest) (*models.Tote, error)
 	qrCode := fmt.Sprintf("TOTE-%05d", maxID+1)
 
 	query := `
-		INSERT INTO totes (name, description, items, location, image_path, qr_code, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO totes (name, description, items, location, image_path, qr_code, parent_id, depth, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	now := time.Now()
@@ -206,7 +305,7 @@ func (s *ToteService) Create(req models.ToteCreateRequest) (*models.Tote, error)
 		legacyImagePath = req.ImagePaths[0]
 	}
 
-	result, err := s.db.Exec(query, req.Name, req.Description, req.Items, req.Location, legacyImagePath, qrCode, now, now)
+	result, err := s.db.Exec(query, req.Name, req.Description, req.Items, req.Location, legacyImagePath, qrCode, req.ParentID, depth, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -429,6 +528,14 @@ func (s *ToteService) Update(id int, req models.ToteUpdateRequest) (*models.Tote
 
 // Delete deletes a tote by ID
 func (s *ToteService) Delete(id int) error {
+	// First, delete all sub-containers (children) of this tote
+	// This ensures cascading delete works even if foreign keys aren't enabled
+	_, err := s.db.Exec("DELETE FROM totes WHERE parent_id = ?", id)
+	if err != nil {
+		return fmt.Errorf("error deleting sub-containers: %w", err)
+	}
+
+	// Now delete the tote itself
 	result, err := s.db.Exec("DELETE FROM totes WHERE id = ?", id)
 	if err != nil {
 		return err
