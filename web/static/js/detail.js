@@ -107,8 +107,7 @@ function displayToteDetail(tote) {
 			</button>`
 		: '';
 
-	// Hide QR code section for sub-containers
-	const qrSectionHtml = tote.depth === 0 ? `
+	const qrSectionHtml = `
 		<div class="detail-qr-section">
 			<div class="detail-qr-code">
 				<div id="qrcode"></div>
@@ -131,27 +130,6 @@ function displayToteDetail(tote) {
 					<label>Last Updated</label>
 					<div class="value">${new Date(tote.updated_at).toLocaleDateString()}</div>
 				</div>
-			</div>
-		</div>
-	` : `
-		<div class="detail-info">
-			${descriptionHtml}
-			${locationHtml}
-			<div class="detail-row">
-				<label>Type</label>
-				<div class="value" style="color: #FF9800; font-weight: 600;">📦 Sub-Container</div>
-			</div>
-			<div class="detail-row">
-				<label>Total Images</label>
-				<div class="value">${tote.images ? tote.images.length : 0}</div>
-			</div>
-			<div class="detail-row">
-				<label>Created</label>
-				<div class="value">${new Date(tote.created_at).toLocaleDateString()}</div>
-			</div>
-			<div class="detail-row">
-				<label>Last Updated</label>
-				<div class="value">${new Date(tote.updated_at).toLocaleDateString()}</div>
 			</div>
 		</div>
 	`;
