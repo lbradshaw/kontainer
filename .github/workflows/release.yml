@@ -16,6 +16,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          draft: true
 
   # ─── Build binaries and upload to the already-created release ────────────────
   # ─── Build and upload each binary sequentially ──────────────────────────────
@@ -125,6 +126,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: kontainer-darwin-arm64
+          draft: false
           finalize: true
 
   # ─── Build and push multi-arch Docker image to ghcr.io ───────────────────────
