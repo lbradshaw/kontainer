@@ -2,7 +2,7 @@
 
 > 📦 Never lose track of what's in your storage boxes again!
 
-A self-hosted, cross-platform inventory management system for tracking items in storage containers, boxes, and totes. Features QR code labels, image galleries, and a modern web interface.
+A self-hosted, cross-platform inventory management system for tracking items in storage containers, boxes, and totes. Features QR code labels, image galleries, a modern web interface, and mobile support via the [Kontain Companion app](https://github.com/lbradshaw/kontainer_companion) for iOS and Android.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org/)
