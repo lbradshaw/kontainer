@@ -20,32 +20,74 @@ jobs:
 
   # ─── Build binaries and upload to the already-created release ────────────────
   build-binaries:
-       name: Build and upload all binaries
-       needs: create-release
-       runs-on: ubuntu-latest
-       permissions:
-         contents: write
-       steps:
-         - uses: actions/checkout@v4
-         - uses: actions/setup-go@v5
-           with:
-             go-version: '1.24'
-         - run: |
-             GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-windows-amd64.exe cmd/kontainer/main.go
-             GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-linux-amd64 cmd/kontainer/main.go
-             GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-linux-arm64 cmd/kontainer/main.go
-             GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-linux-arm-v7 cmd/kontainer/main.go
-             GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-darwin-amd64 cmd/kontainer/main.go
-             GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-darwin-arm64 cmd/kontainer/main.go
-         - uses: softprops/action-gh-release@v2
-           with:
-             files: |
-               kontainer-windows-amd64.exe
-               kontainer-linux-amd64
-               kontainer-linux-arm64
-               kontainer-linux-arm-v7
-               kontainer-darwin-amd64
-               kontainer-darwin-arm64
+    name: Build and upload all binaries
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: |
+          # Windows
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-windows-amd64.exe cmd/kontainer/main.go
+          mkdir -p dist/windows/web/static/js dist/windows/web/static/css
+          cp kontainer-windows-amd64.exe dist/windows/
+          cp -r web/static/js dist/windows/web/static/
+          cp -r web/static/css dist/windows/web/static/
+          cd dist/windows && zip -r ../kontainer-windows-amd64.zip . && cd ../..
+
+          # Linux amd64
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-linux-amd64 cmd/kontainer/main.go
+          mkdir -p dist/linux-amd64/web/static/js dist/linux-amd64/web/static/css
+          cp kontainer-linux-amd64 dist/linux-amd64/
+          cp -r web/static/js dist/linux-amd64/web/static/
+          cp -r web/static/css dist/linux-amd64/web/static/
+          cd dist/linux-amd64 && zip -r ../kontainer-linux-amd64.zip . && cd ../..
+
+          # Linux arm64
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-linux-arm64 cmd/kontainer/main.go
+          mkdir -p dist/linux-arm64/web/static/js dist/linux-arm64/web/static/css
+          cp kontainer-linux-arm64 dist/linux-arm64/
+          cp -r web/static/js dist/linux-arm64/web/static/
+          cp -r web/static/css dist/linux-arm64/web/static/
+          cd dist/linux-arm64 && zip -r ../kontainer-linux-arm64.zip . && cd ../..
+
+          # Linux armv7
+          GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-linux-arm-v7 cmd/kontainer/main.go
+          mkdir -p dist/linux-arm-v7/web/static/js dist/linux-arm-v7/web/static/css
+          cp kontainer-linux-arm-v7 dist/linux-arm-v7/
+          cp -r web/static/js dist/linux-arm-v7/web/static/
+          cp -r web/static/css dist/linux-arm-v7/web/static/
+          cd dist/linux-arm-v7 && zip -r ../kontainer-linux-arm-v7.zip . && cd ../..
+
+          # macOS amd64
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-darwin-amd64 cmd/kontainer/main.go
+          mkdir -p dist/darwin-amd64/web/static/js dist/darwin-amd64/web/static/css
+          cp kontainer-darwin-amd64 dist/darwin-amd64/
+          cp -r web/static/js dist/darwin-amd64/web/static/
+          cp -r web/static/css dist/darwin-amd64/web/static/
+          cd dist/darwin-amd64 && zip -r ../kontainer-darwin-amd64.zip . && cd ../..
+
+          # macOS arm64
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kontainer-darwin-arm64 cmd/kontainer/main.go
+          mkdir -p dist/darwin-arm64/web/static/js dist/darwin-arm64/web/static/css
+          cp kontainer-darwin-arm64 dist/darwin-arm64/
+          cp -r web/static/js dist/darwin-arm64/web/static/
+          cp -r web/static/css dist/darwin-arm64/web/static/
+          cd dist/darwin-arm64 && zip -r ../kontainer-darwin-arm64.zip . && cd ../..
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/kontainer-windows-amd64.zip
+            dist/kontainer-linux-amd64.zip
+            dist/kontainer-linux-arm64.zip
+            dist/kontainer-linux-arm-v7.zip
+            dist/kontainer-darwin-amd64.zip
+            dist/kontainer-darwin-arm64.zip
+
 
   # ─── Build and push multi-arch Docker image to ghcr.io ───────────────────────
   build-docker:
