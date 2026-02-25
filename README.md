@@ -62,12 +62,12 @@ Download the latest release binary for your platform directly from the [Releases
 
 | Platform | Architecture | Download |
 |----------|-------------|---------|
-| **Windows** | 64-bit (Intel/AMD) | [kontainer-windows-amd64.exe](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-windows-amd64.exe) |
-| **Linux** | 64-bit (Intel/AMD) | [kontainer-linux-amd64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-amd64) |
-| **Linux** | 64-bit ARM (Raspberry Pi 3/4/5) | [kontainer-linux-arm64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-arm64) |
-| **Linux** | 32-bit ARM (Raspberry Pi 2/3) | [kontainer-linux-arm-v7](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-arm-v7) |
-| **macOS** | Intel | [kontainer-darwin-amd64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-darwin-amd64) |
-| **macOS** | Apple Silicon (M1/M2/M3) | [kontainer-darwin-arm64](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-darwin-arm64) |
+| **Windows** | 64-bit (Intel/AMD) | [kontainer-windows-amd64.zip](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-windows-amd64.zip) |
+| **Linux** | 64-bit (Intel/AMD) | [kontainer-linux-amd64.zip](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-amd64.zip) |
+| **Linux** | 64-bit ARM (Raspberry Pi 3/4/5) | [kontainer-linux-arm64.zip](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-arm64.zip) |
+| **Linux** | 32-bit ARM (Raspberry Pi 2/3) | [kontainer-linux-arm-v7.zip](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-linux-arm-v7.zip) |
+| **macOS** | Intel | [kontainer-darwin-amd64.zip](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-darwin-amd64.zip) |
+| **macOS** | Apple Silicon (M1/M2/M3) | [kontainer-darwin-arm64.zip](https://github.com/lbradshaw/kontainer/releases/latest/download/kontainer-darwin-arm64.zip) |
 
 > **macOS note:** You may need to right-click → Open the first time to bypass Gatekeeper, as the binary is unsigned.
 
