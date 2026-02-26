@@ -24,7 +24,18 @@ A self-hosted, cross-platform inventory management system for tracking items in 
 - 🔌 **REST API** - Full API access for integrations and automation
 
 ## 📸 Screenshots
-
+### Main Page
+![Main Page](images/main_page.png)
+### Details Page
+![Details Page1](images/details_1.png)
+### Details Page More
+![Details Page2](images/details_2.png)
+### Edit Page
+![Edit Page](images/edit_page1.png)
+### QR Printing
+![Print Page](images/print_qr.png)
+### Settings Page
+![Settings Page](images/settings_page.png)
 <!-- TODO: Add screenshots here -->
 *Coming soon - screenshots of dashboard, detail view, and QR scanning*
 
